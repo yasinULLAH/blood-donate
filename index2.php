@@ -12,8 +12,8 @@
  */
 session_start();
 ob_start();
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+error_reporting(E_ALL & ~E_NOTICE & ~E_STRICT & ~E_DEPRECATED);
+ini_set('display_errors', 0);
 date_default_timezone_set('Asia/Karachi');
 define('DB_FILE', __DIR__ . '/lifeflow_connect.sqlite');
 define('SITE_NAME', 'Poor People Walfare');
