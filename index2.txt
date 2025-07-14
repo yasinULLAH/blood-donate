@@ -1921,71 +1921,135 @@ $csrf_token = generate_csrf_token();
                         <?php
                             exit;
                             break;
-                        case 'home':
-                            $stats = $db->query("
-            SELECT
-                (SELECT COUNT(*) FROM users WHERE role='donor' AND approved=1) as total_donors,
-                (SELECT COUNT(*) FROM requests WHERE status='fulfilled') as lives_saved,
-                (SELECT COUNT(*) FROM drives WHERE status='upcoming') as upcoming_drives,
-                (SELECT COUNT(*) FROM blood_inventory WHERE status = 'available') as total_stock_units
-        ")->fetch();
-                            $latest_announcements = $db->query("SELECT * FROM announcements ORDER BY created_at DESC LIMIT 3")->fetchAll();
-                        ?>
-                            <div class="container my-5 py-5 hero-section">
-                                <div class="row align-items-center">
-                                    <div class="col-lg-6">
-                                        <h1 class="display-4 fw-bold lh-1 mb-3">Become a Hero. <br><span class="text-primary">Donate Blood, Save Lives.</span></h1>
-                                        <p class="lead">Join our community of voluntary blood donors. Your single donation can save up to three lives. Find requests near you, get notified about donation drives, and be a beacon of hope.</p>
-                                        <div class="d-grid gap-2 d-md-flex justify-content-md-start">
-                                            <a href="?page=register" class="btn btn-primary btn-lg px-4 me-md-2"><?= render_icon('person-plus-fill') ?> Register Now</a>
-                                            <a href="?page=login" class="btn btn-outline-secondary btn-lg px-4"><?= render_icon('box-arrow-in-right') ?> Login</a>
-                                        </div>
-                                    </div>
-                                    <div class="col-lg-6 text-center d-none d-lg-block">
-                                    </div>
-                                </div>
-                                <div class="row text-center my-5 py-5 bg-white rounded shadow-sm">
-                                    <div class="col-md-3 mb-3 mb-md-0">
-                                        <h3><?= render_icon('people-fill', 'text-primary') ?> <?= sanitize($stats['total_donors']) ?>+</h3>
-                                        <p class="text-muted">Registered Donors</p>
-                                    </div>
-                                    <div class="col-md-3 mb-3 mb-md-0">
-                                        <h3><?= render_icon('heart-pulse-fill', 'text-danger') ?> <?= sanitize($stats['lives_saved']) ?>+</h3>
-                                        <p class="text-muted">Lives Saved</p>
-                                    </div>
-                                    <div class="col-md-3 mb-3 mb-md-0">
-                                        <h3><?= render_icon('hospital', 'text-info') ?> <?= sanitize($stats['upcoming_drives']) ?></h3>
-                                        <p class="text-muted">Upcoming Drives</p>
-                                    </div>
-                                    <div class="col-md-3 mb-3 mb-md-0">
-                                        <h3><?= render_icon('bank', 'text-success') ?> <?= sanitize($stats['total_stock_units']) ?>+</h3>
-                                        <p class="text-muted">Units in Stock</p>
-                                    </div>
-                                </div>
-                                <h2 class="text-center mb-4 mt-5">Latest Announcements</h2>
-                                <div class="row">
-                                    <?php if (!empty($latest_announcements)): ?>
-                                        <?php foreach ($latest_announcements as $ann): ?>
-                                            <div class="col-md-4 mb-4">
-                                                <div class="card h-100 shadow-sm">
-                                                    <div class="card-body">
-                                                        <h5 class="card-title text-primary"><?= sanitize($ann['title']) ?></h5>
-                                                        <p class="card-text text-muted small"><?= date('F j, Y', strtotime($ann['created_at'])) ?></p>
-                                                        <p class="card-text"><?= nl2br(substr(sanitize($ann['content']), 0, 120)) ?><?= strlen($ann['content']) > 120 ? '...' : '' ?></p>
-                                                        <a href="?page=announcements" class="stretched-link">Read more</a>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <div class="col-12">
-                                            <div class="alert alert-info text-center">No announcements available yet.</div>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
+case 'home':
+    $stats = $db->query("
+        SELECT
+            (SELECT COUNT(*) FROM users WHERE role='donor' AND approved=1) as total_donors,
+            (SELECT COUNT(*) FROM requests WHERE status='fulfilled') as lives_saved,
+            (SELECT COUNT(*) FROM drives WHERE status='upcoming') as upcoming_drives,
+            (SELECT COUNT(*) FROM blood_inventory WHERE status = 'available') as total_stock_units
+    ")->fetch();
+    $latest_announcements = $db->query("SELECT * FROM announcements ORDER BY created_at DESC LIMIT 3")->fetchAll();
+    $urgent_requests = $db->query("SELECT * FROM requests WHERE status = 'pending' AND (urgency = 'emergency' OR urgency = 'urgent') ORDER BY CASE urgency WHEN 'emergency' THEN 1 WHEN 'urgent' THEN 2 END, created_at DESC LIMIT 4")->fetchAll();
+    $upcoming_drives = $db->query("SELECT * FROM drives WHERE status = 'upcoming' AND drive_date > CURRENT_TIMESTAMP ORDER BY drive_date ASC LIMIT 3")->fetchAll();
+    $latest_stories = $db->query("SELECT * FROM stories ORDER BY created_at DESC LIMIT 2")->fetchAll();
+?>
+    <div class="container my-5 py-5 hero-section">
+        <div class="row align-items-center">
+            <div class="col-lg-6">
+                <h1 class="display-4 fw-bold lh-1 mb-3">Become a Hero. <br><span class="text-primary">Donate Blood, Save Lives.</span></h1>
+                <p class="lead">Join our community of voluntary blood donors. Your single donation can save up to three lives. Find requests near you, get notified about donation drives, and be a beacon of hope.</p>
+                <div class="d-grid gap-2 d-md-flex justify-content-md-start">
+                    <a href="?page=register" class="btn btn-primary btn-lg px-4 me-md-2"><?= render_icon('person-plus-fill') ?> Register Now</a>
+                    <a href="?page=login" class="btn btn-outline-secondary btn-lg px-4"><?= render_icon('box-arrow-in-right') ?> Login</a>
+                </div>
+            </div>
+            <div class="col-lg-6 text-center d-none d-lg-block">
+            </div>
+        </div>
+    </div>
+    <div class="container mb-5">
+        <div class="row text-center my-5 py-4 bg-white rounded shadow-sm">
+            <div class="col-md-3 col-6 mb-3 mb-md-0">
+                <h3><?= render_icon('people-fill', 'text-primary') ?> <?= sanitize($stats['total_donors']) ?>+</h3>
+                <p class="text-muted">Registered Donors</p>
+            </div>
+            <div class="col-md-3 col-6 mb-3 mb-md-0">
+                <h3><?= render_icon('heart-pulse-fill', 'text-danger') ?> <?= sanitize($stats['lives_saved']) ?>+</h3>
+                <p class="text-muted">Lives Saved</p>
+            </div>
+            <div class="col-md-3 col-6 mb-3 mb-md-0">
+                <h3><?= render_icon('hospital', 'text-info') ?> <?= sanitize($stats['upcoming_drives']) ?></h3>
+                <p class="text-muted">Upcoming Drives</p>
+            </div>
+            <div class="col-md-3 col-6 mb-3 mb-md-0">
+                <h3><?= render_icon('bank', 'text-success') ?> <?= sanitize($stats['total_stock_units']) ?>+</h3>
+                <p class="text-muted">Units in Stock</p>
+            </div>
+        </div>
+        <h2 class="text-center mb-4 mt-5">Urgent Needs</h2>
+        <div class="row">
+            <?php if (!empty($urgent_requests)): ?>
+                <?php foreach ($urgent_requests as $req): ?>
+                    <div class="col-md-6 col-lg-3 mb-4">
+                        <div class="card h-100 shadow-sm urgency-<?= sanitize($req['urgency']) ?>">
+                            <div class="card-body text-center">
+                                <h2 class="card-title text-danger fw-bold"><?= sanitize($req['blood_group']) ?></h2>
+                                <p class="card-text text-muted"><?= render_icon('hospital') ?> <?= sanitize($req['hospital_name']) ?>, <?= sanitize($req['city']) ?></p>
+                                <span class="badge bg-urgency-<?= sanitize($req['urgency']) ?> text-uppercase"><?= sanitize($req['urgency']) ?></span>
                             </div>
-                        <?php
-                            break;
+                            <div class="card-footer bg-white border-0 text-center">
+                                <a href="?page=login" class="btn btn-sm btn-outline-primary">Login to Help</a>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div class="col-12">
+                    <div class="alert alert-success text-center">No urgent requests at the moment. Thank you to all our donors!</div>
+                </div>
+            <?php endif; ?>
+        </div>
+        <div class="row mt-5">
+            <div class="col-lg-8">
+                <h2 class="mb-4">Upcoming Donation Drives</h2>
+                <?php if (!empty($upcoming_drives)): ?>
+                    <?php foreach ($upcoming_drives as $drive): ?>
+                        <div class="card mb-3 shadow-sm">
+                            <div class="card-body">
+                                <h5 class="card-title text-primary"><?= sanitize($drive['title']) ?></h5>
+                                <p class="card-text mb-1"><small class="text-muted"><?= render_icon('calendar-event') ?> <?= date('F j, Y, g:i A', strtotime($drive['drive_date'])) ?></small></p>
+                                <p class="card-text"><small class="text-muted"><?= render_icon('geo-alt') ?> <?= sanitize($drive['location']) ?></small></p>
+                                <a href="?page=drives" class="stretched-link">More Info</a>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <div class="alert alert-info">No upcoming drives scheduled. Check back soon!</div>
+                <?php endif; ?>
+            </div>
+            <div class="col-lg-4">
+                <h2 class="mb-4">Inspiring Stories</h2>
+                <?php if (!empty($latest_stories)): ?>
+                    <?php foreach ($latest_stories as $story): ?>
+                        <div class="card mb-3 shadow-sm">
+                            <?php if ($story['image_url']): ?>
+                                <img src="<?= sanitize($story['image_url']) ?>" class="card-img-top" alt="<?= sanitize($story['title']) ?>" style="height: 150px; object-fit: cover;">
+                            <?php endif; ?>
+                            <div class="card-body">
+                                <h6 class="card-title"><?= sanitize($story['title']) ?></h6>
+                                <p class="card-text small text-muted"><?= nl2br(substr(sanitize($story['content']), 0, 80)) ?>...</p>
+                                <a href="?page=stories" class="stretched-link">Read Story</a>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
+        <h2 class="text-center mb-4 mt-5">Latest Announcements</h2>
+        <div class="row">
+            <?php if (!empty($latest_announcements)): ?>
+                <?php foreach ($latest_announcements as $ann): ?>
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100 shadow-sm">
+                            <div class="card-body">
+                                <h5 class="card-title text-primary"><?= sanitize($ann['title']) ?></h5>
+                                <p class="card-text text-muted small"><?= date('F j, Y', strtotime($ann['created_at'])) ?></p>
+                                <p class="card-text"><?= nl2br(substr(sanitize($ann['content']), 0, 120)) ?><?= strlen($ann['content']) > 120 ? '...' : '' ?></p>
+                                <a href="?page=announcements" class="stretched-link">Read more</a>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div class="col-12">
+                    <div class="alert alert-info text-center">No announcements available yet.</div>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+<?php
+    break;
                         case 'login':
                         ?>
                             <div class="row justify-content-center my-5">
@@ -3096,164 +3160,159 @@ $csrf_token = generate_csrf_token();
                             </div>
                         <?php
                             break;
-                        case 'leaderboard':
-                            check_auth(['donor', 'admin']);
-                            $filter_period = $_GET['period'] ?? 'all';
-                            $start_date = $_GET['start_date'] ?? '';
-                            $end_date = $_GET['end_date'] ?? '';
-                            $period_text = 'All Time';
-                            $today = date('Y-m-d');
-                            $where_clauses = [];
-                            $params = [];
-                            switch ($filter_period) {
-                                case 'today':
-                                    $where_clauses[] = "d.donation_date = ?";
-                                    $params[] = $today;
-                                    $period_text = "Today (" . date('F j, Y') . ")";
-                                    break;
-                                case 'month':
-                                    $where_clauses[] = "strftime('%Y-%m', d.donation_date) = ?";
-                                    $params[] = date('Y-m');
-                                    $period_text = "This Month (" . date('F Y') . ")";
-                                    break;
-                                case 'year':
-                                    $where_clauses[] = "strftime('%Y', d.donation_date) = ?";
-                                    $params[] = date('Y');
-                                    $period_text = "This Year (" . date('Y') . ")";
-                                    break;
-                                case 'custom':
-                                    if (validate_input($start_date, 'date') && validate_input($end_date, 'date')) {
-                                        $where_clauses[] = "d.donation_date BETWEEN ? AND ?";
-                                        $params[] = $start_date;
-                                        $params[] = $end_date;
-                                        $period_text = "from " . date('M j, Y', strtotime($start_date)) . " to " . date('M j, Y', strtotime($end_date));
-                                    }
-                                    break;
-                            }
-                            $sql = "SELECT u.id as user_id, u.full_name, p.blood_group, COUNT(d.id) as donation_count
-                FROM donations d
-                JOIN users u ON d.user_id = u.id
-                JOIN profiles p ON u.id = p.user_id";
-                            if (!empty($where_clauses)) {
-                                $sql .= " WHERE " . implode(' AND ', $where_clauses);
-                            }
-                            $sql .= " GROUP BY u.id, u.full_name, p.blood_group ORDER BY donation_count DESC, u.full_name ASC LIMIT 25";
-                            $stmt = $db->prepare($sql);
-                            $stmt->execute($params);
-                            $top_donors = $stmt->fetchAll();
-                        ?>
-                            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-                                <h1 class="h2">Top Donors Leaderboard</h1>
-                            </div>
-                            <div class="card shadow-sm mb-4">
-                                <div class="card-header">
-                                    <h5 class="mb-0">Filter Donations</h5>
-                                </div>
-                                <div class="card-body bg-light">
-                                    <form method="get" class="row g-3 align-items-end">
-                                        <input type="hidden" name="page" value="leaderboard">
-                                        <div class="col-md-3">
-                                            <label for="period" class="form-label">Time Period</label>
-                                            <select name="period" id="period" class="form-select">
-                                                <option value="all" <?= ($filter_period == 'all') ? 'selected' : '' ?>>All Time</option>
-                                                <option value="year" <?= ($filter_period == 'year') ? 'selected' : '' ?>>This Year</option>
-                                                <option value="month" <?= ($filter_period == 'month') ? 'selected' : '' ?>>This Month</option>
-                                                <option value="today" <?= ($filter_period == 'today') ? 'selected' : '' ?>>Today</option>
-                                                <option value="custom" <?= ($filter_period == 'custom') ? 'selected' : '' ?>>Custom Range</option>
-                                            </select>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label for="start_date" class="form-label">Start Date</label>
-                                            <input type="date" name="start_date" id="start_date" class="form-control" value="<?= sanitize($start_date) ?>">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <label for="end_date" class="form-label">End Date</label>
-                                            <input type="date" name="end_date" id="end_date" class="form-control" value="<?= sanitize($end_date) ?>">
-                                        </div>
-                                        <div class="col-md-3">
-                                            <button type="submit" class="btn btn-primary w-100"><?= render_icon('search') ?> Filter</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                            <div class="card shadow-sm mb-4">
-                                <div class="card-header">
-                                    <h5 class="mb-0">Showing Results for: <span class="text-primary"><?= sanitize($period_text) ?></span></h5>
-                                </div>
-                                <div class="card-body">
-                                    <p class="text-muted">Recognizing our heroes who have made the most blood donations during the selected period.</p>
-                                    <?php if (!empty($top_donors)): ?>
-                                        <div class="table-responsive">
-                                            <table class="table table-striped table-hover align-middle">
-                                                <thead class="table-dark">
-                                                    <tr>
-                                                        <th scope="col">Rank</th>
-                                                        <th scope="col">Donor Name</th>
-                                                        <th scope="col">Blood Group</th>
-                                                        <th scope="col">Donations</th>
-                                                        <th scope="col">Action</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <?php $rank = 1;
-                                                    foreach ($top_donors as $donor): ?>
-                                                        <tr>
-                                                            <th scope="row" class="fs-4"><?= $rank++ ?></th>
-                                                            <td><?= sanitize($donor['full_name']) ?></td>
-                                                            <td class="fw-bold"><?= sanitize($donor['blood_group']) ?></td>
-                                                            <td><span class="badge bg-primary rounded-pill fs-6"><?= sanitize($donor['donation_count']) ?></span></td>
-                                                            <?php if (get_current_user_role() === 'admin'): ?>
-                                                                <td>
-                                                                    <a href="?page=certificate&user_id=<?= $donor['user_id'] ?>&period_text=<?= urlencode($period_text) ?>" target="_blank" class="btn btn-sm btn-success">
-                                                                        <?= render_icon('award-fill') ?> Print Certificate
-                                                                    </a>
-                                                                </td>
-                                                            <?php endif; ?>
-                                                        </tr>
-                                                    <?php endforeach; ?>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    <?php else: ?>
-                                        <div class="alert alert-info text-center">No donation data to display on the leaderboard for the selected period.</div>
+case 'leaderboard':
+    check_auth(['donor', 'admin']);
+    $filter_period = $_GET['period'] ?? 'all';
+    $start_date = sanitize($_GET['start_date'] ?? '');
+    $end_date = sanitize($_GET['end_date'] ?? '');
+    $period_text = 'All Time';
+    $today = date('Y-m-d');
+    $where_clauses = [];
+    $params = [];
+    switch ($filter_period) {
+        case 'today':
+            $where_clauses[] = "d.donation_date = ?";
+            $params[] = $today;
+            $period_text = "Today (" . date('F j, Y') . ")";
+            break;
+        case 'week':
+            $start_of_week = date('Y-m-d', strtotime('last sunday'));
+            $where_clauses[] = "d.donation_date >= ?";
+            $params[] = $start_of_week;
+            $period_text = "This Week (Since " . date('M j', strtotime($start_of_week)) . ")";
+            break;
+        case 'month':
+            $where_clauses[] = "strftime('%Y-%m', d.donation_date) = ?";
+            $params[] = date('Y-m');
+            $period_text = "This Month (" . date('F Y') . ")";
+            break;
+        case 'year':
+            $where_clauses[] = "strftime('%Y', d.donation_date) = ?";
+            $params[] = date('Y');
+            $period_text = "This Year (" . date('Y') . ")";
+            break;
+        case 'custom':
+            if (validate_input($start_date, 'date') && validate_input($end_date, 'date')) {
+                $where_clauses[] = "d.donation_date BETWEEN ? AND ?";
+                $params[] = $start_date;
+                $params[] = $end_date;
+                $period_text = "from " . date('M j, Y', strtotime($start_date)) . " to " . date('M j, Y', strtotime($end_date));
+            }
+            break;
+    }
+    $sql = "SELECT u.id as user_id, u.full_name, p.blood_group, COUNT(d.id) as donation_count
+        FROM donations d
+        JOIN users u ON d.user_id = u.id
+        JOIN profiles p ON u.id = p.user_id";
+    if (!empty($where_clauses)) {
+        $sql .= " WHERE " . implode(' AND ', $where_clauses);
+    }
+    $sql .= " GROUP BY u.id, u.full_name, p.blood_group ORDER BY donation_count DESC, u.full_name ASC LIMIT 25";
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $top_donors = $stmt->fetchAll();
+?>
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">Top Donors Leaderboard</h1>
+    </div>
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Filter Donations</h5>
+        </div>
+        <div class="card-body bg-light">
+            <form method="get" class="row g-3 align-items-end">
+                <input type="hidden" name="page" value="leaderboard">
+                <div class="col-md-3">
+                    <label for="period" class="form-label">Time Period</label>
+                    <select name="period" id="period" class="form-select">
+                        <option value="all" <?= ($filter_period == 'all') ? 'selected' : '' ?>>All Time</option>
+                        <option value="year" <?= ($filter_period == 'year') ? 'selected' : '' ?>>This Year</option>
+                        <option value="month" <?= ($filter_period == 'month') ? 'selected' : '' ?>>This Month</option>
+                        <option value="week" <?= ($filter_period == 'week') ? 'selected' : '' ?>>This Week</option>
+                        <option value="today" <?= ($filter_period == 'today') ? 'selected' : '' ?>>Today</option>
+                        <option value="custom" <?= ($filter_period == 'custom') ? 'selected' : '' ?>>Custom Range</option>
+                    </select>
+                </div>
+                <div class="col-md-3" id="start_date_col" style="display: none;">
+                    <label for="start_date" class="form-label">Start Date</label>
+                    <input type="date" name="start_date" id="start_date" class="form-control" value="<?= $start_date ?>">
+                </div>
+                <div class="col-md-3" id="end_date_col" style="display: none;">
+                    <label for="end_date" class="form-label">End Date</label>
+                    <input type="date" name="end_date" id="end_date" class="form-control" value="<?= $end_date ?>">
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100"><?= render_icon('search') ?> Filter</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Showing Results for: <span class="text-primary"><?= sanitize($period_text) ?></span></h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted">Recognizing our heroes who have made the most blood donations during the selected period.</p>
+            <?php if (!empty($top_donors)): ?>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th scope="col">Rank</th>
+                                <th scope="col">Donor Name</th>
+                                <th scope="col">Blood Group</th>
+                                <th scope="col">Donations</th>
+                                <?php if (get_current_user_role() === 'admin'): ?>
+                                    <th scope="col">Action</th>
+                                <?php endif; ?>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php $rank = 1;
+                            foreach ($top_donors as $donor): ?>
+                                <tr>
+                                    <th scope="row" class="fs-4"><?= $rank++ ?></th>
+                                    <td><?= sanitize($donor['full_name']) ?></td>
+                                    <td class="fw-bold text-danger"><?= sanitize($donor['blood_group']) ?></td>
+                                    <td><span class="badge bg-primary rounded-pill fs-6"><?= sanitize($donor['donation_count']) ?></span></td>
+                                    <?php if (get_current_user_role() === 'admin'): ?>
+                                        <td>
+                                            <a href="?page=certificate&user_id=<?= $donor['user_id'] ?>&period_text=<?= urlencode($period_text) ?>" target="_blank" class="btn btn-sm btn-success">
+                                                <?= render_icon('award-fill') ?> Certificate
+                                            </a>
+                                        </td>
                                     <?php endif; ?>
-                                </div>
-                            </div>
-                            <?php
-                            break;
-                            ?>
-                            <h1 class="h2 mb-4">Top Donors Leaderboard</h1>
-                            <div class="card shadow-sm mb-4">
-                                <div class="card-body">
-                                    <p class="text-muted">Recognizing our heroes who have made the most blood donations.</p>
-                                    <?php if (!empty($top_donors)): ?>
-                                        <div class="table-responsive">
-                                            <table class="table table-striped table-hover align-middle">
-                                                <thead>
-                                                    <tr>
-                                                        <th scope="col">Rank</th>
-                                                        <th scope="col">Donor Name</th>
-                                                        <th scope="col">Total Donations</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <?php $rank = 1;
-                                                    foreach ($top_donors as $donor): ?>
-                                                        <tr>
-                                                            <th scope="row"><?= $rank++ ?></th>
-                                                            <td><?= sanitize($donor['full_name']) ?></td>
-                                                            <td><span class="badge bg-primary fs-6"><?= sanitize($donor['total_donations']) ?></span></td>
-                                                        </tr>
-                                                    <?php endforeach; ?>
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    <?php else: ?>
-                                        <div class="alert alert-info text-center">No donation data to display on the leaderboard yet.</div>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                        <?php
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php else: ?>
+                <div class="alert alert-info text-center">No donation data to display for the selected period.</div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const periodSelect = document.getElementById('period');
+            const startDateCol = document.getElementById('start_date_col');
+            const endDateCol = document.getElementById('end_date_col');
+
+            function toggleDateInputs() {
+                if (periodSelect.value === 'custom') {
+                    startDateCol.style.display = 'block';
+                    endDateCol.style.display = 'block';
+                } else {
+                    startDateCol.style.display = 'none';
+                    endDateCol.style.display = 'none';
+                }
+            }
+            periodSelect.addEventListener('change', toggleDateInputs);
+            toggleDateInputs();
+        });
+    </script>
+<?php
+    break;
                             break;
                         case 'admin_users':
                             check_auth('admin');
