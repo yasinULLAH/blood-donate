@@ -251,7 +251,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action) {
                     if ($receipt_file) {
                         $receipt_url = 'uploads/receipts/' . $receipt_file;
                     } else {
-                        break; 
+                        break;
                     }
                 }
                 $stmt = $db->prepare("INSERT INTO expenses (payee, amount, expense_date, category, description, receipt_url, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)");
@@ -290,6 +290,7 @@ $csrf_token = generate_csrf_token();
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -298,24 +299,82 @@ $csrf_token = generate_csrf_token();
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        :root { --primary-color: #198754; --secondary-color: #6c757d; --danger-color: #dc3545; }
-        body { background-color: #f8f9fa; }
-        .sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: 280px; padding: 56px 0 0; background-color: #fff; box-shadow: 0 2px 5px 0 rgba(0,0,0,.05); }
-        .main-content { padding-left: 280px; }
-        .sidebar .nav-link { color: #333; font-weight: 500; }
-        .sidebar .nav-link:hover, .sidebar .nav-link.active { color: var(--primary-color); background-color: rgba(25, 135, 84, 0.1); }
-        .sidebar .nav-link .bi { margin-right: .8rem; font-size: 1.2rem; }
-        .card { border: none; box-shadow: 0 0 30px rgba(0, 0, 0, 0.05); }
-        .stat-card-income { border-left: 5px solid var(--primary-color); }
-        .stat-card-expense { border-left: 5px solid var(--danger-color); }
-        .stat-card-net { border-left: 5px solid var(--secondary-color); }
+        :root {
+            --primary-color: #198754;
+            --secondary-color: #6c757d;
+            --danger-color: #dc3545;
+        }
+
+        body {
+            background-color: #f8f9fa;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 280px;
+            padding: 56px 0 0;
+            background-color: #fff;
+            box-shadow: 0 2px 5px 0 rgba(0, 0, 0, .05);
+        }
+
+        .main-content {
+            padding-left: 280px;
+        }
+
+        .sidebar .nav-link {
+            color: #333;
+            font-weight: 500;
+        }
+
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: var(--primary-color);
+            background-color: rgba(25, 135, 84, 0.1);
+        }
+
+        .sidebar .nav-link .bi {
+            margin-right: .8rem;
+            font-size: 1.2rem;
+        }
+
+        .card {
+            border: none;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.05);
+        }
+
+        .stat-card-income {
+            border-left: 5px solid var(--primary-color);
+        }
+
+        .stat-card-expense {
+            border-left: 5px solid var(--danger-color);
+        }
+
+        .stat-card-net {
+            border-left: 5px solid var(--secondary-color);
+        }
+
         @media (max-width: 991.98px) {
-            .sidebar { left: -280px; z-index: 1040; transition: all 0.3s; }
-            .sidebar.active { left: 0; }
-            .main-content { padding-left: 0; }
+            .sidebar {
+                left: -280px;
+                z-index: 1040;
+                transition: all 0.3s;
+            }
+
+            .sidebar.active {
+                left: 0;
+            }
+
+            .main-content {
+                padding-left: 0;
+            }
         }
     </style>
 </head>
+
 <body>
     <header class="navbar navbar-expand-lg navbar-light bg-light fixed-top p-0">
         <div class="container-fluid">
@@ -324,7 +383,7 @@ $csrf_token = generate_csrf_token();
             </button>
             <a class="navbar-brand fw-bold text-success ms-3" href="?page=summary"><?= render_icon('cash-coin') ?> <?= SITE_NAME ?></a>
             <div class="ms-auto d-flex align-items-center">
-                 <a href="index.php" class="btn btn-sm btn-outline-secondary me-2"><?= render_icon('arrow-left-circle') ?> Back to Main App</a>
+                <a href="index.php" class="btn btn-sm btn-outline-secondary me-2"><?= render_icon('arrow-left-circle') ?> Back to Main App</a>
                 <div class="dropdown">
                     <a href="#" class="nav-link dropdown-toggle text-secondary" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                         <?= render_icon('person-circle', 'fs-4') ?>
@@ -375,26 +434,32 @@ $csrf_token = generate_csrf_token();
                         SELECT 'expense' as type, payee as party, -amount as amount, expense_date as date, category FROM expenses
                         ORDER BY date DESC LIMIT 10
                     ")->fetchAll();
-                ?>
+            ?>
                     <h1 class="h2 mb-4">Financial Summary</h1>
                     <div class="row">
                         <div class="col-md-4 mb-4">
-                            <div class="card stat-card-income"><div class="card-body">
-                                <h6 class="text-uppercase text-muted">Total Income</h6>
-                                <span class="h3 fw-bold">PKR <?= number_format($stats['total_income'], 2) ?></span>
-                            </div></div>
+                            <div class="card stat-card-income">
+                                <div class="card-body">
+                                    <h6 class="text-uppercase text-muted">Total Income</h6>
+                                    <span class="h3 fw-bold">PKR <?= number_format($stats['total_income'], 2) ?></span>
+                                </div>
+                            </div>
                         </div>
                         <div class="col-md-4 mb-4">
-                            <div class="card stat-card-expense"><div class="card-body">
-                                <h6 class="text-uppercase text-muted">Total Expenses</h6>
-                                <span class="h3 fw-bold">PKR <?= number_format($stats['total_expenses'], 2) ?></span>
-                            </div></div>
+                            <div class="card stat-card-expense">
+                                <div class="card-body">
+                                    <h6 class="text-uppercase text-muted">Total Expenses</h6>
+                                    <span class="h3 fw-bold">PKR <?= number_format($stats['total_expenses'], 2) ?></span>
+                                </div>
+                            </div>
                         </div>
                         <div class="col-md-4 mb-4">
-                            <div class="card stat-card-net"><div class="card-body">
-                                <h6 class="text-uppercase text-muted">Net Balance</h6>
-                                <span class="h3 fw-bold <?= $net_balance >= 0 ? 'text-success' : 'text-danger' ?>">PKR <?= number_format($net_balance, 2) ?></span>
-                            </div></div>
+                            <div class="card stat-card-net">
+                                <div class="card-body">
+                                    <h6 class="text-uppercase text-muted">Net Balance</h6>
+                                    <span class="h3 fw-bold <?= $net_balance >= 0 ? 'text-success' : 'text-danger' ?>">PKR <?= number_format($net_balance, 2) ?></span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="card">
@@ -404,18 +469,28 @@ $csrf_token = generate_csrf_token();
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-hover mb-0">
-                                    <thead><tr><th>Date</th><th>Party/Source</th><th>Category</th><th>Amount</th></tr></thead>
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Party/Source</th>
+                                            <th>Category</th>
+                                            <th>Amount</th>
+                                        </tr>
+                                    </thead>
                                     <tbody>
                                         <?php if (empty($recent_transactions)): ?>
-                                            <tr><td colspan="4" class="text-center text-muted p-4">No transactions recorded yet.</td></tr>
-                                        <?php else: foreach ($recent_transactions as $tx): ?>
                                             <tr>
-                                                <td><?= date('M j, Y', strtotime($tx['date'])) ?></td>
-                                                <td><?= sanitize($tx['party']) ?></td>
-                                                <td><span class="badge bg-secondary"><?= sanitize($tx['category']) ?></span></td>
-                                                <td class="fw-bold <?= $tx['amount'] > 0 ? 'text-success' : 'text-danger' ?>">PKR <?= number_format(abs($tx['amount']), 2) ?></td>
+                                                <td colspan="4" class="text-center text-muted p-4">No transactions recorded yet.</td>
                                             </tr>
-                                        <?php endforeach; endif; ?>
+                                            <?php else: foreach ($recent_transactions as $tx): ?>
+                                                <tr>
+                                                    <td><?= date('M j, Y', strtotime($tx['date'])) ?></td>
+                                                    <td><?= sanitize($tx['party']) ?></td>
+                                                    <td><span class="badge bg-secondary"><?= sanitize($tx['category']) ?></span></td>
+                                                    <td class="fw-bold <?= $tx['amount'] > 0 ? 'text-success' : 'text-danger' ?>">PKR <?= number_format(abs($tx['amount']), 2) ?></td>
+                                                </tr>
+                                        <?php endforeach;
+                                        endif; ?>
                                     </tbody>
                                 </table>
                             </div>
@@ -431,7 +506,7 @@ $csrf_token = generate_csrf_token();
                     $table = $is_income ? "income" : "expenses";
                     $date_col = $is_income ? "income_date" : "expense_date";
                     $party_col = $is_income ? "source" : "payee";
-                    
+
                     $transactions = $db->query("SELECT * FROM $table ORDER BY $date_col DESC")->fetchAll();
                     $categories = $is_income
                         ? ['Donation', 'Grant', 'Sponsorship', 'Other']
@@ -446,43 +521,54 @@ $csrf_token = generate_csrf_token();
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-hover mb-0">
-                                    <thead><tr><th>Date</th><th><?= $is_income ? "Source" : "Payee" ?></th><th>Category</th><th>Amount</th><th>Description</th><?php if (!$is_income) echo "<th>Receipt</th>"; ?><th>Action</th></tr></thead>
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th><?= $is_income ? "Source" : "Payee" ?></th>
+                                            <th>Category</th>
+                                            <th>Amount</th>
+                                            <th>Description</th><?php if (!$is_income) echo "<th>Receipt</th>"; ?><th>Action</th>
+                                        </tr>
+                                    </thead>
                                     <tbody>
                                         <?php if (empty($transactions)): ?>
-                                            <tr><td colspan="<?= $is_income ? 6 : 7 ?>" class="text-center text-muted p-4">No <?= strtolower($title) ?> recorded.</td></tr>
-                                        <?php else: foreach ($transactions as $tx): ?>
                                             <tr>
-                                                <td><?= date('M j, Y', strtotime($tx[$date_col])) ?></td>
-                                                <td><?= sanitize($tx[$party_col]) ?></td>
-                                                <td><span class="badge bg-secondary"><?= sanitize($tx['category']) ?></span></td>
-                                                <td class="fw-bold">PKR <?= number_format($tx['amount'], 2) ?></td>
-                                                <td><?= sanitize($tx['description']) ?: 'N/A' ?></td>
-                                                <?php if (!$is_income): ?>
-                                                    <td>
-                                                        <?php if ($tx['receipt_url']): ?>
-                                                            <a href="<?= sanitize($tx['receipt_url']) ?>" target="_blank" class="btn btn-sm btn-outline-primary"><?= render_icon('file-earmark-text') ?> View</a>
-                                                        <?php else: ?>
-                                                            N/A
-                                                        <?php endif; ?>
-                                                    </td>
-                                                <?php endif; ?>
-                                                <td>
-                                                    <form method="post" onsubmit="return confirm('Are you sure you want to delete this transaction?');">
-                                                        <input type="hidden" name="action" value="delete_transaction">
-                                                        <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
-                                                        <input type="hidden" name="id" value="<?= $tx['id'] ?>">
-                                                        <input type="hidden" name="type" value="<?= $page === 'income' ? 'income' : 'expense' ?>">
-                                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><?= render_icon('trash') ?></button>
-                                                    </form>
-                                                </td>
+                                                <td colspan="<?= $is_income ? 6 : 7 ?>" class="text-center text-muted p-4">No <?= strtolower($title) ?> recorded.</td>
                                             </tr>
-                                        <?php endforeach; endif; ?>
+                                            <?php else: foreach ($transactions as $tx): ?>
+                                                <tr>
+                                                    <td><?= date('M j, Y', strtotime($tx[$date_col])) ?></td>
+                                                    <td><?= sanitize($tx[$party_col]) ?></td>
+                                                    <td><span class="badge bg-secondary"><?= sanitize($tx['category']) ?></span></td>
+                                                    <td class="fw-bold">PKR <?= number_format($tx['amount'], 2) ?></td>
+                                                    <td><?= sanitize($tx['description']) ?: 'N/A' ?></td>
+                                                    <?php if (!$is_income): ?>
+                                                        <td>
+                                                            <?php if ($tx['receipt_url']): ?>
+                                                                <a href="<?= sanitize($tx['receipt_url']) ?>" target="_blank" class="btn btn-sm btn-outline-primary"><?= render_icon('file-earmark-text') ?> View</a>
+                                                            <?php else: ?>
+                                                                N/A
+                                                            <?php endif; ?>
+                                                        </td>
+                                                    <?php endif; ?>
+                                                    <td>
+                                                        <form method="post" onsubmit="return confirm('Are you sure you want to delete this transaction?');">
+                                                            <input type="hidden" name="action" value="delete_transaction">
+                                                            <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
+                                                            <input type="hidden" name="id" value="<?= $tx['id'] ?>">
+                                                            <input type="hidden" name="type" value="<?= $page === 'income' ? 'income' : 'expense' ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete"><?= render_icon('trash') ?></button>
+                                                        </form>
+                                                    </td>
+                                                </tr>
+                                        <?php endforeach;
+                                        endif; ?>
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="modal fade" id="addTransactionModal" tabindex="-1" aria-hidden="true">
                         <div class="modal-dialog">
                             <div class="modal-content">
@@ -511,7 +597,7 @@ $csrf_token = generate_csrf_token();
                                             <select name="category" class="form-select" required>
                                                 <option value="" disabled selected>Select a category...</option>
                                                 <?php foreach ($categories as $cat): ?>
-                                                <option value="<?= $cat ?>"><?= $cat ?></option>
+                                                    <option value="<?= $cat ?>"><?= $cat ?></option>
                                                 <?php endforeach; ?>
                                             </select>
                                         </div>
@@ -520,10 +606,10 @@ $csrf_token = generate_csrf_token();
                                             <textarea name="description" class="form-control" rows="2"></textarea>
                                         </div>
                                         <?php if (!$is_income): ?>
-                                        <div class="mb-3">
-                                            <label class="form-label">Receipt (Optional, max 2MB)</label>
-                                            <input type="file" name="receipt" class="form-control">
-                                        </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Receipt (Optional, max 2MB)</label>
+                                                <input type="file" name="receipt" class="form-control">
+                                            </div>
                                         <?php endif; ?>
                                     </div>
                                     <div class="modal-footer">
@@ -568,10 +654,9 @@ $csrf_token = generate_csrf_token();
                                 UNION ALL
                                 SELECT 'expense' as type, id, expense_date as date, payee as party, category, -amount as amount, description, receipt_url FROM expenses $expense_where";
                         $params = array_merge($income_params, $expense_params);
-    
                     }
                     $sql .= " ORDER BY date DESC";
-                    
+
                     $stmt = $db->prepare($sql);
                     $stmt->execute($params);
                     $results = $stmt->fetchAll();
@@ -588,17 +673,19 @@ $csrf_token = generate_csrf_token();
 
                     $total_income = $db->prepare("SELECT IFNULL(SUM(amount), 0) FROM income WHERE income_date BETWEEN ? AND ? $cat_where")->execute($summary_params) ? $db->prepare("SELECT IFNULL(SUM(amount), 0) FROM income WHERE income_date BETWEEN ? AND ? $cat_where")->execute($summary_params) && ($stmt_income = $db->prepare("SELECT IFNULL(SUM(amount), 0) FROM income WHERE income_date BETWEEN ? AND ? $cat_where")) && $stmt_income->execute($summary_params) ? $stmt_income->fetchColumn() : 0 : 0;
                     $total_expenses = $db->prepare("SELECT IFNULL(SUM(amount), 0) FROM expenses WHERE expense_date BETWEEN ? AND ? $cat_where")->execute($summary_params) ? $db->prepare("SELECT IFNULL(SUM(amount), 0) FROM expenses WHERE expense_date BETWEEN ? AND ? $cat_where")->execute($summary_params) && ($stmt_expenses = $db->prepare("SELECT IFNULL(SUM(amount), 0) FROM expenses WHERE expense_date BETWEEN ? AND ? $cat_where")) && $stmt_expenses->execute($summary_params) ? $stmt_expenses->fetchColumn() : 0 : 0;
-                    
+
                     if ($filter_type === 'income') $total_expenses = 0;
                     if ($filter_type === 'expense') $total_income = 0;
-                    
+
                     $net_total = $total_income - $total_expenses;
 
                     $all_categories = $db->query("SELECT DISTINCT category FROM income UNION SELECT DISTINCT category FROM expenses")->fetchAll(PDO::FETCH_COLUMN);
                 ?>
                     <h1 class="h2 mb-4">Financial Reports</h1>
                     <div class="card mb-4">
-                        <div class="card-header"><h5 class="mb-0">Filter Report</h5></div>
+                        <div class="card-header">
+                            <h5 class="mb-0">Filter Report</h5>
+                        </div>
                         <div class="card-body bg-light">
                             <form method="get">
                                 <input type="hidden" name="page" value="reports">
@@ -606,16 +693,16 @@ $csrf_token = generate_csrf_token();
                                     <div class="col-md-3"><label>Start Date</label><input type="date" name="start_date" class="form-control" value="<?= sanitize($start_date) ?>"></div>
                                     <div class="col-md-3"><label>End Date</label><input type="date" name="end_date" class="form-control" value="<?= sanitize($end_date) ?>"></div>
                                     <div class="col-md-2"><label>Type</label><select name="type" class="form-select">
-                                        <option value="all" <?= $filter_type == 'all' ? 'selected' : '' ?>>All</option>
-                                        <option value="income" <?= $filter_type == 'income' ? 'selected' : '' ?>>Income</option>
-                                        <option value="expense" <?= $filter_type == 'expense' ? 'selected' : '' ?>>Expenses</option>
-                                    </select></div>
+                                            <option value="all" <?= $filter_type == 'all' ? 'selected' : '' ?>>All</option>
+                                            <option value="income" <?= $filter_type == 'income' ? 'selected' : '' ?>>Income</option>
+                                            <option value="expense" <?= $filter_type == 'expense' ? 'selected' : '' ?>>Expenses</option>
+                                        </select></div>
                                     <div class="col-md-2"><label>Category</label><select name="category" class="form-select">
-                                        <option value="">All Categories</option>
-                                        <?php foreach ($all_categories as $cat): if(!$cat) continue; ?>
-                                        <option value="<?= sanitize($cat) ?>" <?= $filter_category == $cat ? 'selected' : '' ?>><?= sanitize($cat) ?></option>
-                                        <?php endforeach; ?>
-                                    </select></div>
+                                            <option value="">All Categories</option>
+                                            <?php foreach ($all_categories as $cat): if (!$cat) continue; ?>
+                                                <option value="<?= sanitize($cat) ?>" <?= $filter_category == $cat ? 'selected' : '' ?>><?= sanitize($cat) ?></option>
+                                            <?php endforeach; ?>
+                                        </select></div>
                                     <div class="col-md-2"><button type="submit" class="btn btn-primary w-100"><?= render_icon('search') ?> Generate</button></div>
                                 </div>
                             </form>
@@ -629,34 +716,57 @@ $csrf_token = generate_csrf_token();
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-hover mb-0">
-                                    <thead><tr><th>Date</th><th>Type</th><th>Party/Source</th><th>Category</th><th>Amount</th></tr></thead>
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Type</th>
+                                            <th>Party/Source</th>
+                                            <th>Category</th>
+                                            <th>Amount</th>
+                                        </tr>
+                                    </thead>
                                     <tbody>
                                         <?php if (empty($results)): ?>
-                                            <tr><td colspan="5" class="text-center text-muted p-4">No results for the selected criteria.</td></tr>
-                                        <?php else: foreach ($results as $res): ?>
                                             <tr>
-                                                <td><?= date('M j, Y', strtotime($res['date'])) ?></td>
-                                                <td><span class="badge bg-<?= $res['type'] === 'income' ? 'success' : 'danger' ?>"><?= $res['type'] ?></span></td>
-                                                <td><?= sanitize($res['party']) ?></td>
-                                                <td><span class="badge bg-secondary"><?= sanitize($res['category']) ?></span></td>
-                                                <td class="fw-bold <?= ($filter_type === 'all' && $res['amount'] < 0) || $res['type'] === 'expense' ? 'text-danger' : 'text-success' ?>">
-                                                    PKR <?= number_format(abs($res['amount']), 2) ?>
-                                                </td>
+                                                <td colspan="5" class="text-center text-muted p-4">No results for the selected criteria.</td>
                                             </tr>
-                                        <?php endforeach; endif; ?>
+                                            <?php else: foreach ($results as $res): ?>
+                                                <tr>
+                                                    <td><?= date('M j, Y', strtotime($res['date'])) ?></td>
+                                                    <td><span class="badge bg-<?= $res['type'] === 'income' ? 'success' : 'danger' ?>"><?= $res['type'] ?></span></td>
+                                                    <td><?= sanitize($res['party']) ?></td>
+                                                    <td><span class="badge bg-secondary"><?= sanitize($res['category']) ?></span></td>
+                                                    <td class="fw-bold <?= ($filter_type === 'all' && $res['amount'] < 0) || $res['type'] === 'expense' ? 'text-danger' : 'text-success' ?>">
+                                                        PKR <?= number_format(abs($res['amount']), 2) ?>
+                                                    </td>
+                                                </tr>
+                                        <?php endforeach;
+                                        endif; ?>
                                     </tbody>
                                     <tfoot class="table-group-divider fw-bold">
-                                        <tr><td colspan="3"></td><td>Total Income:</td><td class="text-success">PKR <?= number_format($total_income, 2) ?></td></tr>
-                                        <tr><td colspan="3"></td><td>Total Expenses:</td><td class="text-danger">PKR <?= number_format($total_expenses, 2) ?></td></tr>
-                                        <tr><td colspan="3"></td><td>Net Total:</td><td class="<?= $net_total >= 0 ? 'text-success' : 'text-danger' ?>">PKR <?= number_format($net_total, 2) ?></td></tr>
+                                        <tr>
+                                            <td colspan="3"></td>
+                                            <td>Total Income:</td>
+                                            <td class="text-success">PKR <?= number_format($total_income, 2) ?></td>
+                                        </tr>
+                                        <tr>
+                                            <td colspan="3"></td>
+                                            <td>Total Expenses:</td>
+                                            <td class="text-danger">PKR <?= number_format($total_expenses, 2) ?></td>
+                                        </tr>
+                                        <tr>
+                                            <td colspan="3"></td>
+                                            <td>Net Total:</td>
+                                            <td class="<?= $net_total >= 0 ? 'text-success' : 'text-danger' ?>">PKR <?= number_format($net_total, 2) ?></td>
+                                        </tr>
                                     </tfoot>
                                 </table>
                             </div>
                         </div>
                     </div>
 
-                <?php
-                    
+            <?php
+
                     break;
 
                 default:
@@ -673,5 +783,6 @@ $csrf_token = generate_csrf_token();
         });
     </script>
 </body>
+
 </html>
 <?php ob_end_flush(); ?>
