@@ -2,12 +2,9 @@
 ob_start();
 session_start();
 error_reporting(E_ALL);
-ini_set('display_errors', 0);
+ini_set('display_errors', 1);
 date_default_timezone_set('Asia/Karachi');
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'lifeflow_db');
-define('DB_USER', 'root');
-define('DB_PASS', 'root');
+define('DB_FILE', __DIR__ . '/_data/lifeflow_connect.sqlite');
 define('SITE_NAME', 'Poor People Walfare');
 define('APP_VERSION', '3.0.0');
 define('SESSION_LIFETIME', 7200);
@@ -21,23 +18,36 @@ $request_statuses = ['pending', 'fulfilled', 'closed'];
 $drive_statuses = ['upcoming', 'completed', 'cancelled'];
 $donation_types = ['request', 'drive', 'voluntary'];
 $blood_bag_statuses = ['available', 'used', 'expired', 'quarantined'];
+/**
+ * Gets the PDO database connection object.
+ * @return PDO The PDO database object.
+ */
 function get_db()
 {
     static $db = null;
     if ($db === null) {
         try {
-            $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4';
-            $db = new PDO($dsn, DB_USER, DB_PASS);
+            $db_dir = dirname(DB_FILE);
+            if (!is_dir($db_dir)) {
+                mkdir($db_dir, 0755, true);
+            }
+            if (!is_writable($db_dir)) {
+                throw new Exception("Database directory is not writable: " . $db_dir);
+            }
+            $db = new PDO('sqlite:' . DB_FILE);
             $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $db->exec("PRAGMA foreign_keys = ON;");
+            $db->exec("PRAGMA journal_mode = WAL;");
+            $db->exec("PRAGMA synchronous = NORMAL;");
         } catch (PDOException $e) {
             error_log("Database Connection Error: " . $e->getMessage());
             http_response_code(500);
             die("
                 <div style='font-family: sans-serif; padding: 20px; border: 2px solid #dc3545; background: #f8d7da; color: #721c24; margin: 50px; border-radius: 8px;'>
-                    <h1 style='color: #dc3545;'>&#x26A0; Database Connection Error</h1>
-                    <p>We are currently experiencing technical difficulties connecting to the database. Please try again later.</p>
-                    <p style='font-size: 0.8em; color: #721c24;'>If you are the administrator, please check your database credentials and ensure the MySQL server is running.</p>
+                    <h1 style='color: #dc3545;'>&#x26A0; Application Error</h1>
+                    <p>We are currently experiencing technical difficulties. Please try again later.</p>
+                    <p style='font-size: 0.8em; color: #721c24;'>If you are the administrator, please check server permissions for the database file (<code>" . htmlspecialchars(basename(DB_FILE)) . "</code>) and the application directory (<code>" . htmlspecialchars($db_dir) . "</code>).</p>
                 </div>
             ");
         } catch (Exception $e) {
@@ -46,7 +56,7 @@ function get_db()
             die("
                 <div style='font-family: sans-serif; padding: 20px; border: 2px solid #dc3545; background: #f8d7da; color: #721c24; margin: 50px; border-radius: 8px;'>
                     <h1 style='color: #dc3545;'>&#x26A0; Application Setup Error</h1>
-                    <p>There was an issue setting up the application. Please ensure the <code>uploads</code> directory exists and is writable.</p>
+                    <p>There was an issue setting up the application. Please ensure the <code>_data</code> directory exists and is writable.</p>
                     <p style='font-size: 0.8em; color: #721c24;'>Error: " . htmlspecialchars($e->getMessage()) . "</p>
                 </div>
             ");
@@ -54,188 +64,158 @@ function get_db()
     }
     return $db;
 }
+/**
+ * Initializes the database schema and seeds it with an admin user and sample data.
+ */
 function init_db()
 {
     $db = get_db();
     $db->exec("
         CREATE TABLE IF NOT EXISTS settings (
-            `key` VARCHAR(255) PRIMARY KEY,
-            `value` TEXT
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
         CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(50) UNIQUE NOT NULL,
-            email VARCHAR(100) UNIQUE NOT NULL,
-            password_hash VARCHAR(255) NOT NULL,
-            full_name VARCHAR(100) NOT NULL,
-            contact_number VARCHAR(20),
-            role ENUM('donor', 'admin') NOT NULL DEFAULT 'donor',
-            approved TINYINT(1) DEFAULT 0, -- 0 for pending, 1 for approved
-            first_login TINYINT(1) DEFAULT 1, -- 1 for first login, 0 after password change
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            full_name TEXT NOT NULL,
+            contact_number TEXT,
+            role TEXT NOT NULL DEFAULT 'donor' CHECK(role IN ('donor', 'admin')),
+            approved INTEGER DEFAULT 0, -- 0 for pending, 1 for approved
+            first_login INTEGER DEFAULT 1, -- 1 for first login, 0 after password change
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
         CREATE TABLE IF NOT EXISTS profiles (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT UNIQUE NOT NULL,
-            blood_group VARCHAR(5) NOT NULL,
-            city VARCHAR(100),
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER UNIQUE NOT NULL,
+            blood_group TEXT NOT NULL,
+            city TEXT,
             last_donation_date DATE,
-            is_available TINYINT(1) DEFAULT 1,
-            total_donations INT DEFAULT 0,
-            profile_image_url VARCHAR(255),
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            is_available INTEGER DEFAULT 1,
+            total_donations INTEGER DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
         CREATE TABLE IF NOT EXISTS requests (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            patient_name VARCHAR(100) NOT NULL,
-            blood_group VARCHAR(5) NOT NULL,
-            city VARCHAR(100) NOT NULL,
-            hospital_name VARCHAR(100) NOT NULL,
-            required_units INT DEFAULT 1,
-            urgency ENUM('normal', 'urgent', 'emergency') NOT NULL DEFAULT 'normal',
-            contact_person VARCHAR(100) NOT NULL,
-            contact_number VARCHAR(20) NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_name TEXT NOT NULL,
+            blood_group TEXT NOT NULL,
+            city TEXT NOT NULL,
+            hospital_name TEXT NOT NULL,
+            required_units INTEGER DEFAULT 1,
+            urgency TEXT NOT NULL DEFAULT 'normal' CHECK(urgency IN ('normal', 'urgent', 'emergency')),
+            contact_person TEXT NOT NULL,
+            contact_number TEXT NOT NULL,
             details TEXT,
-            status ENUM('pending', 'fulfilled', 'closed') DEFAULT 'pending',
-            created_by INT,
+            status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'fulfilled', 'closed')),
+            created_by INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
         CREATE TABLE IF NOT EXISTS drives (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            title VARCHAR(255) NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
             drive_date DATETIME NOT NULL,
-            location VARCHAR(255) NOT NULL,
-            location_url VARCHAR(255),
-            organizer VARCHAR(255),
+            location TEXT NOT NULL,
+            location_url TEXT,
+            organizer TEXT,
             description TEXT,
-            status ENUM('upcoming', 'completed', 'cancelled') DEFAULT 'upcoming',
-            created_by INT NOT NULL,
+            status TEXT DEFAULT 'upcoming' CHECK(status IN ('upcoming', 'completed', 'cancelled')),
+            created_by INTEGER NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
         CREATE TABLE IF NOT EXISTS donations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
             donation_date DATE NOT NULL,
-            type ENUM('request', 'drive', 'voluntary') NOT NULL,
-            request_id INT,
-            drive_id INT,
+            type TEXT NOT NULL CHECK(type IN ('request', 'drive', 'voluntary')),
+            request_id INTEGER,
+            drive_id INTEGER,
             notes TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (request_id) REFERENCES requests(id) ON DELETE SET NULL,
             FOREIGN KEY (drive_id) REFERENCES drives(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
         CREATE TABLE IF NOT EXISTS announcements (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            title VARCHAR(255) NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
             content TEXT NOT NULL,
-            created_by INT NOT NULL,
+            created_by INTEGER NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
         CREATE TABLE IF NOT EXISTS stories (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            title VARCHAR(255) NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
             content TEXT NOT NULL,
-            image_url VARCHAR(255),
-            created_by INT,
+            image_url TEXT,
+            created_by INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
         CREATE TABLE IF NOT EXISTS news (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            title VARCHAR(255) NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
             content TEXT NOT NULL,
-            image_url VARCHAR(255),
+            image_url TEXT,
             published_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            created_by INT,
+            created_by INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
         CREATE TABLE IF NOT EXISTS blood_stock (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            blood_group VARCHAR(5) UNIQUE NOT NULL,
-            units INT DEFAULT 0,
-            last_updated DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            blood_group TEXT UNIQUE NOT NULL,
+            units INTEGER DEFAULT 0,
+            last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
         CREATE TABLE IF NOT EXISTS blood_inventory (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            bag_id VARCHAR(255) UNIQUE NOT NULL,
-            blood_group VARCHAR(5) NOT NULL,
-            donor_id INT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bag_id TEXT UNIQUE NOT NULL,
+            blood_group TEXT NOT NULL,
+            donor_id INTEGER,
             collection_date DATE NOT NULL,
             expiry_date DATE NOT NULL,
-            status ENUM('available', 'used', 'expired', 'quarantined') NOT NULL DEFAULT 'available',
+            status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available', 'used', 'expired', 'quarantined')),
             notes TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (donor_id) REFERENCES users(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
         CREATE TABLE IF NOT EXISTS messages (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            sender_id INT,
-            sender_name VARCHAR(100) NOT NULL,
-            sender_email VARCHAR(100) NOT NULL,
-            subject VARCHAR(255) NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id INTEGER,
+            sender_name TEXT NOT NULL,
+            sender_email TEXT NOT NULL,
+            subject TEXT NOT NULL,
             message TEXT NOT NULL,
-            read_status TINYINT(1) DEFAULT 0, -- 0 for unread, 1 for read
+            read_status INTEGER DEFAULT 0, -- 0 for unread, 1 for read
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        );
     ");
     $db->exec("
-    CREATE INDEX idx_users_username ON users (username);
-");
-    $db->exec("
-    CREATE INDEX idx_users_email ON users (email);
-");
-    $db->exec("
-    CREATE INDEX idx_profiles_blood_group ON profiles (blood_group);
-");
-    $db->exec("
-    CREATE INDEX idx_profiles_city ON profiles (city);
-");
-    $db->exec("
-    CREATE INDEX idx_requests_blood_group ON requests (blood_group);
-");
-    $db->exec("
-    CREATE INDEX idx_requests_city ON requests (city);
-");
-    $db->exec("
-    CREATE INDEX idx_requests_status ON requests (status);
-");
-    $db->exec("
-    CREATE INDEX idx_drives_drive_date ON drives (drive_date);
-");
-    $db->exec("
-    CREATE INDEX idx_donations_user_id ON donations (user_id);
-");
-    $db->exec("
-    CREATE INDEX idx_donations_donation_date ON donations (donation_date);
-");
-    $db->exec("
-    CREATE INDEX idx_announcements_created_at ON announcements (created_at);
-");
-    $db->exec("
-    CREATE INDEX idx_stories_created_at ON stories (created_at);
-");
-    $db->exec("
-    CREATE INDEX idx_news_published_at ON news (published_at);
-");
-    $db->exec("
-    CREATE INDEX idx_inventory_blood_group ON blood_inventory (blood_group);
-");
-    $db->exec("
-    CREATE INDEX idx_inventory_status ON blood_inventory (status);
-");
-    $db->exec("
-    CREATE INDEX idx_inventory_expiry_date ON blood_inventory (expiry_date);
-");
-    $db->exec("
-    CREATE INDEX idx_messages_created_at ON messages (created_at);
-");
+        CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);
+        CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
+        CREATE INDEX IF NOT EXISTS idx_profiles_blood_group ON profiles (blood_group);
+        CREATE INDEX IF NOT EXISTS idx_profiles_city ON profiles (city);
+        CREATE INDEX IF NOT EXISTS idx_requests_blood_group ON requests (blood_group);
+        CREATE INDEX IF NOT EXISTS idx_requests_city ON requests (city);
+        CREATE INDEX IF NOT EXISTS idx_requests_status ON requests (status);
+        CREATE INDEX IF NOT EXISTS idx_drives_drive_date ON drives (drive_date);
+        CREATE INDEX IF NOT EXISTS idx_donations_user_id ON donations (user_id);
+        CREATE INDEX IF NOT EXISTS idx_donations_donation_date ON donations (donation_date);
+        CREATE INDEX IF NOT EXISTS idx_announcements_created_at ON announcements (created_at);
+        CREATE INDEX IF NOT EXISTS idx_stories_created_at ON stories (created_at);
+        CREATE INDEX IF NOT EXISTS idx_news_published_at ON news (published_at);
+        CREATE INDEX IF NOT EXISTS idx_inventory_blood_group ON blood_inventory (blood_group);
+        CREATE INDEX IF NOT EXISTS idx_inventory_status ON blood_inventory (status);
+        CREATE INDEX IF NOT EXISTS idx_inventory_expiry_date ON blood_inventory (expiry_date);
+        CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages (created_at);
+    ");
     $stmt = $db->query("SELECT COUNT(*) FROM users WHERE role = 'admin'");
     if ($stmt->fetchColumn() == 0) {
         $admin_user = 'admin';
@@ -246,7 +226,7 @@ function init_db()
         set_flash_message('success', "Initial Admin user created: <strong>Username:</strong> {$admin_user}, <strong>Password:</strong> {$admin_pass}. You will be prompted to change this password on your first login for security.");
     }
     foreach ($GLOBALS['blood_groups'] as $bg) {
-        $stmt = $db->prepare("INSERT IGNORE INTO blood_stock (blood_group, units) VALUES (?, 0)");
+        $stmt = $db->prepare("INSERT OR IGNORE INTO blood_stock (blood_group, units) VALUES (?, 0)");
         $stmt->execute([$bg]);
     }
     $stmt = $db->query("SELECT COUNT(*) FROM users");
@@ -254,6 +234,10 @@ function init_db()
         seed_sample_data($db);
     }
 }
+/**
+ * Seeds the database with sample data.
+ * @param PDO $db The database object.
+ */
 function seed_sample_data($db)
 {
     try {
@@ -372,9 +356,17 @@ function seed_sample_data($db)
         foreach ($inventory_data as $id) {
             $inventory_stmt->execute($id);
         }
-        foreach ($GLOBALS['blood_groups'] as $bg) {
-            update_blood_stock_summary($db, $bg);
-        }
+        $db->exec("UPDATE blood_stock SET units = 0, last_updated = CURRENT_TIMESTAMP;");
+        $db->exec("
+            INSERT INTO blood_stock (blood_group, units, last_updated)
+            SELECT blood_group, COUNT(*) as units, MAX(created_at)
+            FROM blood_inventory
+            WHERE status = 'available'
+            GROUP BY blood_group
+            ON CONFLICT(blood_group) DO UPDATE SET
+                units = excluded.units,
+                last_updated = excluded.last_updated;
+        ");
         $db->commit();
         set_flash_message('info', 'Sample data has been seeded into the database.');
     } catch (Exception $e) {
@@ -383,6 +375,11 @@ function seed_sample_data($db)
         set_flash_message('danger', 'Error seeding sample data: ' . $e->getMessage());
     }
 }
+/**
+ * Safely sanitizes data for output (HTML escaping).
+ * @param string|array|null $data The data to sanitize.
+ * @return string|array|null The sanitized data.
+ */
 function sanitize($data)
 {
     if (is_array($data)) {
@@ -390,6 +387,13 @@ function sanitize($data)
     }
     return htmlspecialchars((string)$data, ENT_QUOTES, 'UTF-8');
 }
+/**
+ * Validates and sanitizes input data.
+ * @param string $input The input string.
+ * @param string $type The type of validation ('email', 'int', 'string', 'tel', 'date', 'datetime', 'url', 'blood_group', 'role', 'status', 'urgency', 'blood_bag_status').
+ * @param array $options Additional options (e.g., 'min_len', 'max_len').
+ * @return mixed The sanitized/validated value or false on failure.
+ */
 function validate_input($input, $type, $options = [])
 {
     $input = trim($input);
@@ -438,6 +442,10 @@ function validate_input($input, $type, $options = [])
             return false;
     }
 }
+/**
+ * Generates a CSRF token and stores it in the session.
+ * @return string The generated token.
+ */
 function generate_csrf_token()
 {
     if (empty($_SESSION['csrf_token'])) {
@@ -445,6 +453,11 @@ function generate_csrf_token()
     }
     return $_SESSION['csrf_token'];
 }
+/**
+ * Validates a CSRF token from the request against the session token.
+ * @param string $token The token from the request.
+ * @return bool True if valid, false otherwise.
+ */
 function validate_csrf_token($token)
 {
     if (empty($_SESSION['csrf_token']) || empty($token) || !hash_equals($_SESSION['csrf_token'], $token)) {
@@ -453,6 +466,12 @@ function validate_csrf_token($token)
     }
     return true;
 }
+/**
+ * Redirects to a specified page.
+ * @param string $page The page to redirect to.
+ * @param array $params Optional query parameters.
+ * @param int $status_code HTTP status code for redirection (e.g., 303 See Other).
+ */
 function redirect($page = 'dashboard', $params = [], $status_code = 303)
 {
     $url = $_SERVER['PHP_SELF'];
@@ -461,10 +480,18 @@ function redirect($page = 'dashboard', $params = [], $status_code = 303)
     header("Location: " . $url, true, $status_code);
     exit;
 }
+/**
+ * Sets a flash message in the session.
+ * @param string $type The message type (e.g., 'success', 'danger', 'warning', 'info').
+ * @param string $text The message text.
+ */
 function set_flash_message($type, $text)
 {
     $_SESSION['flash_message'] = ['type' => $type, 'text' => $text];
 }
+/**
+ * Displays the flash message if one exists.
+ */
 function display_flash_message()
 {
     if (isset($_SESSION['flash_message'])) {
@@ -476,6 +503,10 @@ function display_flash_message()
         unset($_SESSION['flash_message']);
     }
 }
+/**
+ * Checks if a user is logged in.
+ * @return bool True if logged in, false otherwise.
+ */
 function is_logged_in()
 {
     if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > SESSION_LIFETIME) {
@@ -502,14 +533,28 @@ function is_logged_in()
     }
     return false;
 }
+/**
+ * Gets the current user's role.
+ * @return string|null The user's role or null if not logged in.
+ */
 function get_current_user_role()
 {
     return $_SESSION['role'] ?? null;
 }
+/**
+ * Gets the current user's ID.
+ * @return int|null The user's ID or null if not logged in.
+ */
 function get_current_user_id()
 {
     return $_SESSION['user_id'] ?? null;
 }
+/**
+ * Checks if the current user has the required role(s) and is approved.
+ * @param string|array $required_roles The role or roles required.
+ * @param bool $redirect_on_fail Whether to redirect if authentication fails.
+ * @return bool True if authorized, false otherwise.
+ */
 function check_auth($required_roles, $redirect_on_fail = true)
 {
     if (!is_logged_in()) {
@@ -542,6 +587,11 @@ function check_auth($required_roles, $redirect_on_fail = true)
     }
     return true;
 }
+/**
+ * Calculates the next eligible donation date (3 months after last donation).
+ * @param string|null $last_date The last donation date in Y-m-d format.
+ * @return string The next eligible date in Y-m-d format.
+ */
 function get_next_eligible_date($last_date)
 {
     if (empty($last_date)) {
@@ -549,10 +599,24 @@ function get_next_eligible_date($last_date)
     }
     return date('Y-m-d', strtotime($last_date . ' +3 months'));
 }
+/**
+ * Renders an icon from Bootstrap Icons.
+ * @param string $icon_name The name of the icon.
+ * @param string $extra_classes Additional CSS classes.
+ * @return string HTML for the icon.
+ */
 function render_icon($icon_name, $extra_classes = '')
 {
     return "<i class='bi bi-{$icon_name} {$extra_classes}'></i>";
 }
+/**
+ * Handles file uploads securely.
+ * @param array $file_input The $_FILES array for the input.
+ * @param string $sub_dir The subdirectory within UPLOAD_DIR_BASE (e.g., 'stories/', 'news/').
+ * @param array $allowed_extensions Allowed file extensions (e.g., ['jpg', 'png']).
+ * @param int $max_size Max file size in bytes.
+ * @return string|false The new file path relative to the web root (e.g., 'uploads/stories/filename.jpg') on success, false on failure.
+ */
 function handle_upload($file_input, $sub_dir, $allowed_extensions, $max_size = MAX_FILE_SIZE)
 {
     if (!isset($file_input) || $file_input['error'] !== UPLOAD_ERR_OK) {
@@ -594,22 +658,26 @@ function handle_upload($file_input, $sub_dir, $allowed_extensions, $max_size = M
         return false;
     }
 }
+/**
+ * Updates the total units for a blood group in the blood_stock table.
+ * This function should be called after adding/removing/updating blood_inventory items.
+ * @param PDO $db The database connection.
+ * @param string $blood_group The blood group to update.
+ */
 function update_blood_stock_summary($db, $blood_group)
 {
     $stmt = $db->prepare("
         INSERT INTO blood_stock (blood_group, units, last_updated)
-        VALUES (?, (SELECT COUNT(*) FROM blood_inventory WHERE blood_group = ? AND status = 'available'), NOW())
-        ON DUPLICATE KEY UPDATE
+        VALUES (?, (SELECT COUNT(*) FROM blood_inventory WHERE blood_group = ? AND status = 'available'), CURRENT_TIMESTAMP)
+        ON CONFLICT(blood_group) DO UPDATE SET
             units = (SELECT COUNT(*) FROM blood_inventory WHERE blood_group = ? AND status = 'available'),
-            last_updated = NOW();
+            last_updated = CURRENT_TIMESTAMP;
     ");
     $stmt->execute([$blood_group, $blood_group, $blood_group]);
 }
-if (!is_dir(UPLOAD_DIR_BASE)) {
-    mkdir(UPLOAD_DIR_BASE, 0755, true);
-}
+init_db();
 $db = get_db();
-$page = sanitize($_GET['page'] ?? 'home');
+$page = sanitize($_GET['page'] ?? (is_logged_in() ? 'dashboard' : 'home'));
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
     if (!in_array($action, ['login', 'register']) && !validate_csrf_token($_POST['csrf_token'] ?? '')) {
@@ -635,9 +703,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $_SESSION['approved'] = $user['approved'];
                     $_SESSION['first_login'] = $user['first_login'];
                     $_SESSION['last_activity'] = time();
-                    $stmt_profile_img = $db->prepare("SELECT profile_image_url FROM profiles WHERE user_id = ?");
-                    $stmt_profile_img->execute([$user['id']]);
-                    $_SESSION['profile_image_url'] = $stmt_profile_img->fetchColumn() ?: null;
                     if ($user['first_login'] == 1 && $user['role'] == 'admin') {
                         set_flash_message('warning', 'Please change your default password immediately for security.');
                         redirect('profile');
@@ -676,7 +741,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
                 $db->beginTransaction();
                 $hashed_pass = password_hash($password, PASSWORD_DEFAULT);
-                $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, full_name, contact_number, role, approved) VALUES (?, ?, ?, ?, ?, 'donor', 1)");
+                $stmt = $db->prepare("INSERT INTO users (username, email, password_hash, full_name, contact_number, role, approved) VALUES (?, ?, ?, ?, ?, 'donor', 0)");
                 $stmt->execute([$username, $email, $hashed_pass, $full_name, $contact]);
                 $user_id = $db->lastInsertId();
                 $stmt = $db->prepare("INSERT INTO profiles (user_id, blood_group, city) VALUES (?, ?, ?)");
@@ -775,13 +840,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $image_to_update = $new_image_path ?? $old_image_path;
                 $stmt_update_profile = $db->prepare("
         UPDATE profiles SET
-            blood_group = ?, city = ?, is_available = ?, last_donation_date = ?, updated_at = NOW(), profile_image_url = ?
+            blood_group = ?, city = ?, is_available = ?, last_donation_date = ?, updated_at = CURRENT_TIMESTAMP, profile_image_url = ?
         WHERE user_id = ?
     ");
                 $stmt_update_profile->execute([$blood_group, $city, $is_available, $last_donation_date, $image_to_update, $user_id]);
                 if ($stmt_update_profile->rowCount() == 0) {
                     $stmt_insert_profile = $db->prepare("
-            INSERT INTO profiles (user_id, blood_group, city, is_available, last_donation_date, profile_image_url)
+            INSERT INTO profiles (user_id, blood_group, city, is_available, last_donation_date, profile_image_url) 
             VALUES (?, ?, ?, ?, ?, ?)
         ");
                     $stmt_insert_profile->execute([$user_id, $blood_group, $city, $is_available, $last_donation_date, $image_to_update]);
@@ -856,8 +921,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             redirect('requests');
                         }
                         foreach ($bags_to_use as $bag_id) {
-                            $db->prepare("UPDATE blood_inventory SET status = 'used', notes = CONCAT('Used for request ', ?) WHERE id = ?")
-                                ->execute([$request_id, $bag_id]);
+                            $db->prepare("UPDATE blood_inventory SET status = 'used', notes = 'Used for request {$request_id}' WHERE id = ?")
+                                ->execute([$bag_id]);
                         }
                         update_blood_stock_summary($db, $req_info['blood_group']);
                         $db->prepare("INSERT INTO donations (user_id, donation_date, type, request_id, notes) VALUES (?, ?, ?, ?, ?)")
@@ -940,7 +1005,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $db->beginTransaction();
                 $stmt = $db->prepare("INSERT INTO donations (user_id, donation_date, type, request_id, drive_id, notes) VALUES (?, ?, ?, ?, ?, ?)");
                 $stmt->execute([$user_id, $donation_date, $type, $request_id, $drive_id, $notes]);
-                $stmt_profile = $db->prepare("UPDATE profiles SET last_donation_date = ?, total_donations = total_donations + 1, updated_at = NOW() WHERE user_id = ?");
+                $stmt_profile = $db->prepare("UPDATE profiles SET last_donation_date = ?, total_donations = total_donations + 1, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?");
                 $stmt_profile->execute([$donation_date, $user_id]);
                 $db->commit();
                 set_flash_message('success', 'Donation recorded successfully.');
@@ -1150,7 +1215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $stmt->execute([$bag_id, $blood_group, $donor_id, $collection_date, $expiry_date, $notes]);
                 $stmt_donation = $db->prepare("INSERT INTO donations (user_id, donation_date, type, notes) VALUES (?, ?, 'voluntary', ?)");
                 $stmt_donation->execute([$donor_id, $collection_date, "Donation for bag ID: {$bag_id}"]);
-                $stmt_profile = $db->prepare("UPDATE profiles SET last_donation_date = ?, total_donations = total_donations + 1, updated_at = NOW() WHERE user_id = ?");
+                $stmt_profile = $db->prepare("UPDATE profiles SET last_donation_date = ?, total_donations = total_donations + 1, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?");
                 $stmt_profile->execute([$collection_date, $donor_id]);
                 update_blood_stock_summary($db, $blood_group);
                 $db->commit();
@@ -1220,75 +1285,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 while (ob_get_level() > 0) {
                     ob_end_clean();
                 }
-                set_flash_message('info', 'MySQL database backup needs to be performed using `mysqldump` command line tool or a database management tool like phpMyAdmin.');
-                redirect('admin_backup');
-                /*
-                $backup_file = 'lifeflow_backup_' . date('Y-m-d_H-i-s') . '.sql';
-                $command = sprintf(
-                    'mysqldump --user=%s --password=%s --host=%s %s > %s',
-                    escapeshellarg(DB_USER),
-                    escapeshellarg(DB_PASS),
-                    escapeshellarg(DB_HOST),
-                    escapeshellarg(DB_NAME),
-                    escapeshellarg(__DIR__ . '/_data/' . $backup_file) 
-                );
-                exec($command, $output, $return_var);
-                if ($return_var === 0) {
-                    header('Content-Description: File Transfer');
-                    header('Content-Type: application/octet-stream');
-                    header('Content-Disposition: attachment; filename="' . $backup_file . '"');
-                    header('Expires: 0');
-                    header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
-                    header('Pragma: public');
-                    readfile(__DIR__ . '/_data/' . $backup_file);
-                    unlink(__DIR__ . '/_data/' . $backup_file); 
-                    exit;
-                } else {
-                    set_flash_message('danger', 'Failed to create MySQL backup. Check server configuration and permissions.');
-                    redirect('admin_backup');
-                }
-                */
-                break;
+                header('Content-Description: File Transfer');
+                header('Content-Type: application/octet-stream');
+                header('Content-Disposition: attachment; filename="lifeflow_backup_' . date('Y-m-d_H-i-s') . '.sqlite"');
+                header('Expires: 0');
+                header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+                header('Pragma: public');
+                header('Content-Length: ' . filesize(DB_FILE));
+                readfile(DB_FILE);
+                exit;
             case 'restore_db':
                 check_auth('admin');
-                set_flash_message('info', 'MySQL database restore needs to be performed using `mysql` command line tool or a database management tool like phpMyAdmin. Uploading a file here is not sufficient for MySQL.');
-                redirect('admin_backup');
-                /*
                 if (isset($_FILES['backup_file']) && $_FILES['backup_file']['error'] === UPLOAD_ERR_OK) {
                     $file_tmp_path = $_FILES['backup_file']['tmp_name'];
                     $file_name = $_FILES['backup_file']['name'];
                     $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                    if ($file_ext === 'sql') { 
-                        $temp_sql_file = __DIR__ . '/_data/temp_restore_' . uniqid() . '.sql';
-                        if (move_uploaded_file($file_tmp_path, $temp_sql_file)) {
-                            $command = sprintf(
-                                'mysql --user=%s --password=%s --host=%s %s < %s',
-                                escapeshellarg(DB_USER),
-                                escapeshellarg(DB_PASS),
-                                escapeshellarg(DB_HOST),
-                                escapeshellarg(DB_NAME),
-                                escapeshellarg($temp_sql_file)
-                            );
-                            exec($command, $output, $return_var);
-                            unlink($temp_sql_file); 
-                            if ($return_var === 0) {
-                                set_flash_message('success', 'Database restored successfully. You will be logged out for security.');
-                                session_destroy();
-                                redirect('login');
-                            } else {
-                                set_flash_message('danger', 'Failed to restore MySQL database. Check SQL file and server permissions.');
-                            }
+                    if ($file_ext === 'sqlite') {
+                        $db = null;
+                        $temp_db = new PDO('sqlite:' . DB_FILE);
+                        $temp_db->exec("PRAGMA journal_mode = DELETE;");
+                        $temp_db = null;
+                        if (move_uploaded_file($file_tmp_path, DB_FILE)) {
+                            set_flash_message('success', 'Database restored successfully. You will be logged out for security.');
+                            session_destroy();
+                            redirect('login');
                         } else {
                             set_flash_message('danger', 'Failed to move uploaded file. Check server permissions.');
                         }
                     } else {
-                        set_flash_message('danger', 'Invalid file type. Please upload a .sql file for MySQL.');
+                        set_flash_message('danger', 'Invalid file type. Please upload a .sqlite file.');
                     }
                 } else {
                     set_flash_message('danger', 'File upload error. Code: ' . ($_FILES['backup_file']['error'] ?? 'N/A'));
                 }
                 redirect('admin_backup');
-                */
                 break;
             case 'send_message':
                 $sender_id = get_current_user_id();
@@ -1350,12 +1380,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 $public_pages = ['home', 'login', 'register', 'announcements', 'news', 'stories', 'how_to_donate', 'contact', 'certificate'];
-if (is_logged_in() && in_array($page, ['login', 'register'])) {
-    redirect('dashboard');
-}
 if (!is_logged_in() && !in_array($page, $public_pages)) {
     set_flash_message('warning', 'Please log in to view this page.');
     redirect('login');
+}
+if (is_logged_in() && in_array($page, ['login', 'register', 'home'])) {
+    redirect('dashboard');
 }
 if (is_logged_in() && get_current_user_role() === 'admin' && ($_SESSION['first_login'] ?? 0) == 1 && $page !== 'profile') {
     set_flash_message('warning', 'For security, please change your default password immediately.');
@@ -1744,8 +1774,185 @@ switch ($page) {
                 </div>
             </div>
         </div>
+    <?php
+        break;
+    case 'dashboard':
+        check_auth(['donor', 'admin']);
+        $user_id = get_current_user_id();
+        $stats = $db->query("
+                                    SELECT
+                                        (SELECT COUNT(*) FROM users WHERE role='donor' AND approved=1) as total_donors,
+                                        (SELECT COUNT(*) FROM requests WHERE status='pending') as pending_requests,
+                                        (SELECT COUNT(*) FROM drives WHERE status='upcoming' AND drive_date > CURRENT_TIMESTAMP) as upcoming_drives,
+                                        (SELECT COUNT(*) FROM blood_inventory WHERE status = 'available') as total_stock_units
+                                ")->fetch();
+        $user_profile_stmt = $db->prepare("SELECT p.*, u.full_name, u.email FROM profiles p JOIN users u ON u.id = p.user_id WHERE p.user_id = ?");
+        $user_profile_stmt->execute([$user_id]);
+        $profile = $user_profile_stmt->fetch();
+        $my_requests_stmt = $db->prepare("SELECT * FROM requests WHERE created_by = ? ORDER BY created_at DESC LIMIT 5");
+        $my_requests_stmt->execute([$user_id]);
+        $my_requests = $my_requests_stmt->fetchAll();
+        $matching_requests = [];
+        if ($profile && $profile['blood_group']) {
+            $matching_requests_stmt = $db->prepare("SELECT * FROM requests WHERE status = 'pending' AND blood_group = ? ORDER BY created_at DESC LIMIT 5");
+            $matching_requests_stmt->execute([$profile['blood_group']]);
+            $matching_requests = $matching_requests_stmt->fetchAll();
+        }
+        $dashboard_stock = array_fill_keys($blood_groups, ['units' => 0, 'last_updated' => 'N/A']);
+        $live_stock_counts = $db->query("
+                                    SELECT blood_group, COUNT(*) as units, MAX(created_at) as last_updated
+                                    FROM blood_inventory
+                                    WHERE status = 'available'
+                                    GROUP BY blood_group
+                                ")->fetchAll();
+        foreach ($live_stock_counts as $stock) {
+            if (isset($dashboard_stock[$stock['blood_group']])) {
+                $dashboard_stock[$stock['blood_group']] = [
+                    'units' => $stock['units'],
+                    'last_updated' => $stock['last_updated']
+                ];
+            }
+        }
+    ?>
+        <h1 class="mb-4">Dashboard</h1>
+        <div class="row">
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card border-start border-primary border-4 h-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs fw-bold text-primary text-uppercase mb-1">Total Donors</div>
+                                <div class="h5 mb-0 fw-bold text-gray-800"><?= sanitize($stats['total_donors']) ?></div>
+                            </div>
+                            <div class="col-auto">
+                                <?= render_icon('people-fill', 'fs-2 text-primary opacity-50') ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card border-start border-success border-4 h-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs fw-bold text-success text-uppercase mb-1">Available Units</div>
+                                <div class="h5 mb-0 fw-bold text-gray-800"><?= sanitize($stats['total_stock_units']) ?></div>
+                            </div>
+                            <div class="col-auto">
+                                <?= render_icon('droplet-fill', 'fs-2 text-success opacity-50') ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card border-start border-info border-4 h-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs fw-bold text-info text-uppercase mb-1">Upcoming Drives</div>
+                                <div class="h5 mb-0 fw-bold text-gray-800"><?= sanitize($stats['upcoming_drives']) ?></div>
+                            </div>
+                            <div class="col-auto">
+                                <?= render_icon('hospital-fill', 'fs-2 text-info opacity-50') ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card border-start border-warning border-4 h-100 shadow-sm">
+                    <div class="card-body">
+                        <div class="row no-gutters align-items-center">
+                            <div class="col mr-2">
+                                <div class="text-xs fw-bold text-warning text-uppercase mb-1">Pending Requests</div>
+                                <div class="h5 mb-0 fw-bold text-gray-800"><?= sanitize($stats['pending_requests']) ?></div>
+                            </div>
+                            <div class="col-auto">
+                                <?= render_icon('hourglass-split', 'fs-2 text-warning opacity-50') ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                        <h6 class="m-0 font-weight-bold text-primary">Requests Matching Your Blood Group (<?= sanitize($profile['blood_group'] ?? 'N/A') ?>)</h6>
+                    </div>
+                    <div class="card-body">
+                        <?php if ($profile && !empty($matching_requests)) : ?>
+                            <ul class="list-group list-group-flush">
+                                <?php foreach ($matching_requests as $req) : ?>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong><?= sanitize($req['hospital_name']) ?></strong>, <?= sanitize($req['city']) ?>
+                                            <span class="badge bg-urgency-<?= sanitize($req['urgency']) ?> ms-2 text-uppercase"><?= sanitize($req['urgency']) ?></span>
+                                        </div>
+                                        <a href="?page=requests" class="btn btn-sm btn-outline-primary">View Details</a>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php else : ?>
+                            <p class="text-center text-muted py-3">No pending requests match your blood group right now. Keep up the great work!</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 font-weight-bold text-primary">Your Recent Requests</h6>
+                    </div>
+                    <div class="card-body">
+                        <?php if (!empty($my_requests)) : ?>
+                            <ul class="list-group list-group-flush">
+                                <?php foreach ($my_requests as $req) : ?>
+                                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                                        For <strong><?= sanitize($req['patient_name']) ?></strong> (<?= sanitize($req['blood_group']) ?>)
+                                        <span class="badge bg-info"><?= ucfirst(sanitize($req['status'])) ?></span>
+                                    </li>
+                                <?php endforeach; ?>
+                            </ul>
+                        <?php else : ?>
+                            <p class="text-center text-muted py-3">You haven't created any requests yet. <a href="?page=requests">Create one now</a>.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-12">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header py-3">
+                        <h6 class="m-0 font-weight-bold text-primary">Current Blood Stock Levels</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <?php foreach ($dashboard_stock as $bg => $stock) : ?>
+                                <div class="col-md-3 col-sm-6 mb-3">
+                                    <div class="card text-center h-100 <?= $stock['units'] < 10 ? 'border-danger' : ($stock['units'] < 20 ? 'border-warning' : 'border-success') ?>">
+                                        <div class="card-body">
+                                            <h5 class="card-title text-danger fw-bold"><?= sanitize($bg) ?></h5>
+                                            <p class="card-text fs-3 fw-bold"><?= sanitize($stock['units']) ?> <small class="text-muted">units</small></p>
+                                            <p class="card-text text-muted small">
+                                                Last updated: <?= $stock['last_updated'] !== 'N/A' ? date('M j, Y', strtotime($stock['last_updated'])) : 'N/A' ?>
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 <?php
         break;
+        exit;
 }
 ?>
 <!DOCTYPE html>
@@ -1760,7 +1967,7 @@ switch ($page) {
     <meta name="robots" content="index, follow">
     <title><?= sanitize(ucfirst(str_replace('_', ' ', $page))) ?> | <?= SITE_NAME ?></title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text x='0' y='14' font-size='16'>&#x1F496;</text></svg>" type="image/svg+xml">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1846,13 +2053,8 @@ switch ($page) {
         }
 
         .main-content {
+            padding-left: 280px;
             flex: 1;
-        }
-
-        @media (min-width: 992px) {
-            .main-content {
-                padding-left: 280px;
-            }
         }
 
         .sidebar .nav-link {
@@ -1962,7 +2164,9 @@ switch ($page) {
                 left: 0;
             }
 
-
+            .main-content {
+                padding-left: 0;
+            }
 
             .navbar-toggler {
                 margin-left: 1rem;
@@ -2231,7 +2435,8 @@ switch ($page) {
                     <?php if (is_logged_in() && $_SESSION['approved'] == 0 && get_current_user_role() !== 'admin') : ?>
                         <div class='alert alert-warning border-0 shadow-sm'>Your account is pending approval by an administrator. Some features may be limited.</div>
                     <?php endif; ?>
-                <?php else : ?>
+                <?php else :
+                ?>
                     <nav class="navbar navbar-expand-lg navbar-light bg-white fixed-top shadow-sm">
                         <div class="container">
                             <a class="navbar-brand fw-bold text-primary" href="?page=home"><?= render_icon('droplet-half') ?> <?= SITE_NAME ?></a>
@@ -2263,12 +2468,12 @@ switch ($page) {
                                     SELECT
                                         (SELECT COUNT(*) FROM users WHERE role='donor' AND approved=1) as total_donors,
                                         (SELECT COUNT(*) FROM requests WHERE status='fulfilled') as lives_saved,
-                                        (SELECT COUNT(*) FROM drives WHERE status='upcoming' AND drive_date > NOW()) as upcoming_drives,
+                                        (SELECT COUNT(*) FROM drives WHERE status='upcoming' AND drive_date > CURRENT_TIMESTAMP) as upcoming_drives,
                                         (SELECT COUNT(*) FROM blood_inventory WHERE status = 'available') as total_stock_units
                                 ")->fetch();
                                 $latest_announcements = $db->query("SELECT * FROM announcements ORDER BY created_at DESC LIMIT 3")->fetchAll();
-                                $urgent_requests = $db->query("SELECT * FROM requests WHERE status = 'pending' AND (urgency = 'emergency' OR urgency = 'urgent') ORDER BY FIELD(urgency, 'emergency', 'urgent', 'normal'), created_at DESC LIMIT 4")->fetchAll();
-                                $upcoming_drives = $db->query("SELECT * FROM drives WHERE status = 'upcoming' AND drive_date > NOW() ORDER BY drive_date ASC LIMIT 3")->fetchAll();
+                                $urgent_requests = $db->query("SELECT * FROM requests WHERE status = 'pending' AND (urgency = 'emergency' OR urgency = 'urgent') ORDER BY CASE urgency WHEN 'emergency' THEN 1 WHEN 'urgent' THEN 2 END, created_at DESC LIMIT 4")->fetchAll();
+                                $upcoming_drives = $db->query("SELECT * FROM drives WHERE status = 'upcoming' AND drive_date > CURRENT_TIMESTAMP ORDER BY drive_date ASC LIMIT 3")->fetchAll();
                                 $latest_stories = $db->query("SELECT * FROM stories ORDER BY created_at DESC LIMIT 2")->fetchAll();
                                 $top_donors = $db->query("
                                     SELECT u.full_name, p.blood_group, p.total_donations
@@ -2290,7 +2495,6 @@ switch ($page) {
                                             </div>
                                         </div>
                                         <div class="col-lg-6 text-center d-none d-lg-block">
-                                            <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d13381.625225506423!2d70.69159583982226!3d33.01942451909802!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x38d8099da9eb0179%3A0x762d475a1b9f9784!2sTownship%2C%20Bannu%2C%20Pakistan!5e0!3m2!1sen!2s!4v1753530016425!5m2!1sen!2s" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
                                         </div>
                                     </div>
                                 </div>
@@ -2419,7 +2623,7 @@ switch ($page) {
                                                     <div class="card h-100 shadow-sm">
                                                         <div class="card-body">
                                                             <h5 class="card-title text-primary"><?= sanitize($ann['title']) ?></h5>
-                                                            <p class="card-subtitle mb-2 text-muted small"><?= date('F j, Y, g:i a', strtotime($ann['created_at'])) ?> by <span class="fw-bold"><?= sanitize($ann['full_name']) ?></span></p>
+                                                            <p class="card-text text-muted small"><?= date('F j, Y', strtotime($ann['created_at'])) ?></p>
                                                             <p class="card-text"><?= nl2br(substr(sanitize($ann['content']), 0, 120)) ?><?= strlen($ann['content']) > 120 ? '...' : '' ?></p>
                                                             <a href="?page=announcements" class="stretched-link">Read more</a>
                                                         </div>
@@ -2435,183 +2639,6 @@ switch ($page) {
                                 </div>
                             <?php
                                 break;
-                            case 'dashboard':
-                                check_auth(['donor', 'admin']);
-                                $user_id = get_current_user_id();
-                                $stats = $db->query("
-                                    SELECT
-                                        (SELECT COUNT(*) FROM users WHERE role='donor' AND approved=1) as total_donors,
-                                        (SELECT COUNT(*) FROM requests WHERE status='pending') as pending_requests,
-                                        (SELECT COUNT(*) FROM drives WHERE status='upcoming' AND drive_date > NOW()) as upcoming_drives,
-                                        (SELECT COUNT(*) FROM blood_inventory WHERE status = 'available') as total_stock_units
-                                ")->fetch();
-                                $user_profile_stmt = $db->prepare("SELECT p.*, u.full_name, u.email FROM profiles p JOIN users u ON u.id = p.user_id WHERE p.user_id = ?");
-                                $user_profile_stmt->execute([$user_id]);
-                                $profile = $user_profile_stmt->fetch();
-                                $my_requests_stmt = $db->prepare("SELECT * FROM requests WHERE created_by = ? ORDER BY created_at DESC LIMIT 5");
-                                $my_requests_stmt->execute([$user_id]);
-                                $my_requests = $my_requests_stmt->fetchAll();
-                                $matching_requests = [];
-                                if ($profile && $profile['blood_group']) {
-                                    $matching_requests_stmt = $db->prepare("SELECT * FROM requests WHERE status = 'pending' AND blood_group = ? ORDER BY created_at DESC LIMIT 5");
-                                    $matching_requests_stmt->execute([$profile['blood_group']]);
-                                    $matching_requests = $matching_requests_stmt->fetchAll();
-                                }
-                                $dashboard_stock = array_fill_keys($blood_groups, ['units' => 0, 'last_updated' => 'N/A']);
-                                $live_stock_counts = $db->query("
-                                    SELECT blood_group, COUNT(*) as units, MAX(created_at) as last_updated
-                                    FROM blood_inventory
-                                    WHERE status = 'available'
-                                    GROUP BY blood_group
-                                ")->fetchAll();
-                                foreach ($live_stock_counts as $stock) {
-                                    if (isset($dashboard_stock[$stock['blood_group']])) {
-                                        $dashboard_stock[$stock['blood_group']] = [
-                                            'units' => $stock['units'],
-                                            'last_updated' => $stock['last_updated']
-                                        ];
-                                    }
-                                }
-                            ?>
-                                <h1 class="mb-4">Dashboard</h1>
-                                <div class="row">
-                                    <div class="col-xl-3 col-md-6 mb-4">
-                                        <div class="card border-start border-primary border-4 h-100 shadow-sm">
-                                            <div class="card-body">
-                                                <div class="row no-gutters align-items-center">
-                                                    <div class="col mr-2">
-                                                        <div class="text-xs fw-bold text-primary text-uppercase mb-1">Total Donors</div>
-                                                        <div class="h5 mb-0 fw-bold text-gray-800"><?= sanitize($stats['total_donors']) ?></div>
-                                                    </div>
-                                                    <div class="col-auto">
-                                                        <?= render_icon('people-fill', 'fs-2 text-primary opacity-50') ?>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-xl-3 col-md-6 mb-4">
-                                        <div class="card border-start border-success border-4 h-100 shadow-sm">
-                                            <div class="card-body">
-                                                <div class="row no-gutters align-items-center">
-                                                    <div class="col mr-2">
-                                                        <div class="text-xs fw-bold text-success text-uppercase mb-1">Available Units</div>
-                                                        <div class="h5 mb-0 fw-bold text-gray-800"><?= sanitize($stats['total_stock_units']) ?></div>
-                                                    </div>
-                                                    <div class="col-auto">
-                                                        <?= render_icon('droplet-fill', 'fs-2 text-success opacity-50') ?>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-xl-3 col-md-6 mb-4">
-                                        <div class="card border-start border-info border-4 h-100 shadow-sm">
-                                            <div class="card-body">
-                                                <div class="row no-gutters align-items-center">
-                                                    <div class="col mr-2">
-                                                        <div class="text-xs fw-bold text-info text-uppercase mb-1">Upcoming Drives</div>
-                                                        <div class="h5 mb-0 fw-bold text-gray-800"><?= sanitize($stats['upcoming_drives']) ?></div>
-                                                    </div>
-                                                    <div class="col-auto">
-                                                        <?= render_icon('hospital-fill', 'fs-2 text-info opacity-50') ?>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-xl-3 col-md-6 mb-4">
-                                        <div class="card border-start border-warning border-4 h-100 shadow-sm">
-                                            <div class="card-body">
-                                                <div class="row no-gutters align-items-center">
-                                                    <div class="col mr-2">
-                                                        <div class="text-xs fw-bold text-warning text-uppercase mb-1">Pending Requests</div>
-                                                        <div class="h5 mb-0 fw-bold text-gray-800"><?= sanitize($stats['pending_requests']) ?></div>
-                                                    </div>
-                                                    <div class="col-auto">
-                                                        <?= render_icon('hourglass-split', 'fs-2 text-warning opacity-50') ?>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-lg-6">
-                                        <div class="card shadow-sm mb-4">
-                                            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                                                <h6 class="m-0 font-weight-bold text-primary">Requests Matching Your Blood Group (<?= sanitize($profile['blood_group'] ?? 'N/A') ?>)</h6>
-                                            </div>
-                                            <div class="card-body">
-                                                <?php if ($profile && !empty($matching_requests)) : ?>
-                                                    <ul class="list-group list-group-flush">
-                                                        <?php foreach ($matching_requests as $req) : ?>
-                                                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                                                <div>
-                                                                    <strong><?= sanitize($req['hospital_name']) ?></strong>, <?= sanitize($req['city']) ?>
-                                                                    <span class="badge bg-urgency-<?= sanitize($req['urgency']) ?> ms-2 text-uppercase"><?= sanitize($req['urgency']) ?></span>
-                                                                </div>
-                                                                <a href="?page=requests" class="btn btn-sm btn-outline-primary">View Details</a>
-                                                            </li>
-                                                        <?php endforeach; ?>
-                                                    </ul>
-                                                <?php else : ?>
-                                                    <p class="text-center text-muted py-3">No pending requests match your blood group right now. Keep up the great work!</p>
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="col-lg-6">
-                                        <div class="card shadow-sm mb-4">
-                                            <div class="card-header py-3">
-                                                <h6 class="m-0 font-weight-bold text-primary">Your Recent Requests</h6>
-                                            </div>
-                                            <div class="card-body">
-                                                <?php if (!empty($my_requests)) : ?>
-                                                    <ul class="list-group list-group-flush">
-                                                        <?php foreach ($my_requests as $req) : ?>
-                                                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                                                For <strong><?= sanitize($req['patient_name']) ?></strong> (<?= sanitize($req['blood_group']) ?>)
-                                                                <span class="badge bg-info"><?= ucfirst(sanitize($req['status'])) ?></span>
-                                                            </li>
-                                                        <?php endforeach; ?>
-                                                    </ul>
-                                                <?php else : ?>
-                                                    <p class="text-center text-muted py-3">You haven't created any requests yet. <a href="?page=requests">Create one now</a>.</p>
-                                                <?php endif; ?>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-12">
-                                        <div class="card shadow-sm mb-4">
-                                            <div class="card-header py-3">
-                                                <h6 class="m-0 font-weight-bold text-primary">Current Blood Stock Levels</h6>
-                                            </div>
-                                            <div class="card-body">
-                                                <div class="row">
-                                                    <?php foreach ($dashboard_stock as $bg => $stock) : ?>
-                                                        <div class="col-md-3 col-sm-6 mb-3">
-                                                            <div class="card text-center h-100 <?= $stock['units'] < 10 ? 'border-danger' : ($stock['units'] < 20 ? 'border-warning' : 'border-success') ?>">
-                                                                <div class="card-body">
-                                                                    <h5 class="card-title text-danger fw-bold"><?= sanitize($bg) ?></h5>
-                                                                    <p class="card-text fs-3 fw-bold"><?= sanitize($stock['units']) ?> <small class="text-muted">units</small></p>
-                                                                    <p class="card-text text-muted small">
-                                                                        Last updated: <?= $stock['last_updated'] !== 'N/A' ? date('M j, Y', strtotime($stock['last_updated'])) : 'N/A' ?>
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    <?php endforeach; ?>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php
-                                break;
-                                exit;
                             case 'profile':
                                 check_auth(['donor', 'admin']);
                                 $user_id = get_current_user_id();
@@ -2871,7 +2898,7 @@ switch ($page) {
                                     $sql .= " AND status = ?";
                                     $params[] = $filter_status;
                                 }
-                                $sql .= " ORDER BY FIELD(urgency, 'emergency', 'urgent', 'normal'), created_at DESC";
+                                $sql .= " ORDER BY CASE urgency WHEN 'emergency' THEN 1 WHEN 'urgent' THEN 2 WHEN 'normal' THEN 3 END, created_at DESC";
                                 $stmt = $db->prepare($sql);
                                 $stmt->execute($params);
                                 $reqs = $stmt->fetchAll();
@@ -3479,7 +3506,7 @@ switch ($page) {
                                                                     <input type="hidden" name="action" value="delete_news">
                                                                     <input type="hidden" name="id" value="<?= $news['id'] ?>">
                                                                     <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
-                                                                    <button type="submit" class="btn btn-sm btn-outline-danger"><?= render_icon('trash') ?></button>
+                                                                    <button type="submit" class="btn btn-sm btn-outline-danger"><?= render_icon('trash') ?> Delete</button>
                                                                 </form>
                                                             <?php endif; ?>
                                                         </div>
@@ -3602,12 +3629,12 @@ switch ($page) {
                                         $period_text = "This Week (Since " . date('M j', strtotime($start_of_week)) . ")";
                                         break;
                                     case 'month':
-                                        $where_clauses[] = "DATE_FORMAT(d.donation_date, '%Y-%m') = ?";
+                                        $where_clauses[] = "strftime('%Y-%m', d.donation_date) = ?";
                                         $params[] = date('Y-m');
                                         $period_text = "This Month (" . date('F Y') . ")";
                                         break;
                                     case 'year':
-                                        $where_clauses[] = "YEAR(d.donation_date) = ?";
+                                        $where_clauses[] = "strftime('%Y', d.donation_date) = ?";
                                         $params[] = date('Y');
                                         $period_text = "This Year (" . date('Y') . ")";
                                         break;
@@ -3626,7 +3653,7 @@ switch ($page) {
                                 $sql = "SELECT u.id as user_id, u.full_name, p.blood_group, COUNT(d.id) as donation_count
                                 FROM donations d
                                 JOIN users u ON d.user_id = u.id
-                                LEFT JOIN profiles p ON u.id = p.user_id";
+                                JOIN profiles p ON u.id = p.user_id";
                                 if (!empty($where_clauses)) {
                                     $sql .= " WHERE " . implode(' AND ', $where_clauses);
                                 }
@@ -3841,18 +3868,20 @@ switch ($page) {
                                     }
                                 }
                                 $chart_data_stmt = $db->prepare("
+                                    WITH RECURSIVE dates(date) AS (
+                                      SELECT date('now', '-29 days')
+                                      UNION ALL
+                                      SELECT date(date, '+1 day')
+                                      FROM dates
+                                      WHERE date <= date('now')
+                                    )
                                     SELECT
-                                      DATE(d.date) as date,
+                                      d.date,
                                       IFNULL(donations.count, 0) as donated,
                                       IFNULL(usages.count, 0) as used
-                                    FROM (
-                                      SELECT CURDATE() - INTERVAL (a.N + b.N*10) DAY AS date
-                                      FROM (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) AS a
-                                      JOIN (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2) AS b
-                                      WHERE CURDATE() - INTERVAL (a.N + b.N*10) DAY >= CURDATE() - INTERVAL 29 DAY
-                                    ) AS d
+                                    FROM dates d
                                     LEFT JOIN (SELECT collection_date, COUNT(*) as count FROM blood_inventory GROUP BY collection_date) donations ON d.date = donations.collection_date
-                                    LEFT JOIN (SELECT DATE(created_at) as usage_date, COUNT(*) as count FROM blood_inventory WHERE status = 'used' GROUP BY usage_date) usages ON d.date = usages.usage_date
+                                    LEFT JOIN (SELECT date(created_at) as usage_date, COUNT(*) as count FROM blood_inventory WHERE status = 'used' GROUP BY usage_date) usages ON d.date = usages.usage_date
                                     ORDER BY d.date ASC
                                 ");
                                 $chart_data_stmt->execute();
@@ -4400,11 +4429,11 @@ switch ($page) {
                                         <div class="card shadow-sm">
                                             <div class="card-body">
                                                 <h5 class="card-title text-primary"><?= render_icon('database-down') ?> Create a Backup</h5>
-                                                <p class="card-text">For MySQL, database backup is typically performed using command-line tools like <code>mysqldump</code> or through your hosting provider's control panel (e.g., phpMyAdmin). This button currently provides a general message.</p>
+                                                <p class="card-text">Download a complete backup of the application database (<code><?= basename(DB_FILE) ?></code>). Keep this file in a safe and secure place.</p>
                                                 <form method="post">
                                                     <input type="hidden" name="action" value="backup_db">
                                                     <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
-                                                    <button type="submit" class="btn btn-primary"><?= render_icon('download') ?> Simulate Download Backup</button>
+                                                    <button type="submit" class="btn btn-primary"><?= render_icon('download') ?> Download Backup Now</button>
                                                 </form>
                                             </div>
                                         </div>
@@ -4415,15 +4444,15 @@ switch ($page) {
                                                 <h5 class="card-title mb-0"><?= render_icon('database-up') ?> Restore from Backup</h5>
                                             </div>
                                             <div class="card-body">
-                                                <div class="alert alert-danger mb-3"><strong>WARNING:</strong> Restoring a MySQL database typically involves importing an <code>.sql</code> file via command-line tools (<code>mysql</code>) or a database management interface. This form is for demonstration and will not perform an actual restore.</div>
-                                                <form method="post" enctype="multipart/form-data" onsubmit="return confirm('This form is for demonstration. Actual MySQL restore requires command-line tools. Do you wish to proceed with the demonstration message?');">
+                                                <div class="alert alert-danger mb-3"><strong>WARNING:</strong> Restoring will completely overwrite the current database with the contents of the backup file. This action cannot be undone. All current data will be lost.</div>
+                                                <form method="post" enctype="multipart/form-data" onsubmit="return confirm('Are you absolutely sure you want to overwrite the database? All current data will be lost and you will be logged out.');">
                                                     <input type="hidden" name="action" value="restore_db">
                                                     <input type="hidden" name="csrf_token" value="<?= $csrf_token ?>">
                                                     <div class="mb-3">
-                                                        <label for="backup_file" class="form-label">Select .sql Backup File</label>
-                                                        <input class="form-control" type="file" id="backup_file" name="backup_file" accept=".sql">
+                                                        <label for="backup_file" class="form-label">Select .sqlite Backup File</label>
+                                                        <input class="form-control" type="file" id="backup_file" name="backup_file" accept=".sqlite" required>
                                                     </div>
-                                                    <button type="submit" class="btn btn-danger"><?= render_icon('upload') ?> Simulate Restore Database</button>
+                                                    <button type="submit" class="btn btn-danger"><?= render_icon('upload') ?> Restore Database</button>
                                                 </form>
                                             </div>
                                         </div>
@@ -4432,8 +4461,8 @@ switch ($page) {
                         <?php
                                 break;
                             default:
-                                echo "<div class='alert alert-danger text-center shadow-sm'>go to <a href='index.php'>home</a>...</div>";
-                                //echo "<script>setTimeout(() => window.location.href = '?page=home', 2000);</script>";
+                                echo "<div class='alert alert-danger text-center shadow-sm'>Page not found. Redirecting to home...</div>";
+                                echo "<script>setTimeout(() => window.location.href = '?page=home', 2000);</script>";
                                 break;
                         }
                         ?>
@@ -4476,16 +4505,4 @@ switch ($page) {
 </body>
 
 </html>
-<script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const page = urlParams.get('page');
-
-        if (page && window.location.pathname.includes('index.php')) {
-            const basePath = window.location.pathname.replace('index.php', '');
-            const newUrl = basePath + page;
-            history.replaceState(null, '', newUrl);
-        }
-    });
-</script>
 <?php ob_end_flush(); ?>

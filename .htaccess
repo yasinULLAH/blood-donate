@@ -1,0 +1,10 @@
+RewriteEngine On
+
+# If your project is in a subfolder like 'localhost/blood/', use this line:
+RewriteBase /blood/
+
+# If your project is at the root 'localhost/', comment out the line above.
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?page=$1 [L,QSA]
