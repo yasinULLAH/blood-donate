@@ -455,9 +455,17 @@ function validate_csrf_token($token)
 }
 function redirect($page = 'dashboard', $params = [], $status_code = 303)
 {
-    $url = $_SERVER['PHP_SELF'];
-    $params['page'] = $page;
-    $url .= '?' . http_build_query($params);
+    // If the page name ends with .php, treat it as a separate file.
+    if (substr($page, -4) === '.php') {
+        $url = $page;
+        if (!empty($params)) {
+            $url .= '?' . http_build_query($params);
+        }
+    } else { // Otherwise, treat it as an internal page for index.php.
+        $url = $_SERVER['PHP_SELF'];
+        $params['page'] = $page;
+        $url .= '?' . http_build_query($params);
+    }
     header("Location: " . $url, true, $status_code);
     exit;
 }
@@ -831,7 +839,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 set_flash_message('success', 'Blood request created successfully.');
                 redirect('requests');
                 break;
-            case 'update_request_status':
+            /*             case 'update_request_status':
                 check_auth('admin');
                 $request_id = validate_input($_POST['id'], 'int');
                 $status = validate_input($_POST['status'], 'status');
@@ -847,8 +855,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $stmt_req->execute([$request_id]);
                     $req_info = $stmt_req->fetch();
                     if ($req_info) {
-                        $stmt_bags = $db->prepare("SELECT id FROM blood_inventory WHERE blood_group = ? AND status = 'available' ORDER BY expiry_date ASC LIMIT ?");
-                        $stmt_bags->execute([$req_info['blood_group'], $req_info['required_units']]);
+                        // Fix: Use bindValue to correctly handle the integer type for the LIMIT clause
+                        $stmt_bags = $db->prepare("SELECT id FROM blood_inventory WHERE blood_group = :blood_group AND status = 'available' ORDER BY expiry_date ASC LIMIT :limit");
+                        $stmt_bags->bindValue(':blood_group', $req_info['blood_group'], PDO::PARAM_STR);
+                        $stmt_bags->bindValue(':limit', (int) $req_info['required_units'], PDO::PARAM_INT);
+                        $stmt_bags->execute();
                         $bags_to_use = $stmt_bags->fetchAll(PDO::FETCH_COLUMN);
                         if (count($bags_to_use) < $req_info['required_units']) {
                             $db->rollBack();
@@ -867,6 +878,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $db->commit();
                 set_flash_message('success', "Request status updated to '{$status}'.");
                 redirect('requests');
+                break;
+             */
+            case 'update_request_status':
+                check_auth('admin');
+                $request_id = validate_input($_POST['id'], 'int');
+                $status = validate_input($_POST['status'], 'status');
+
+                if (!$request_id || !$status) {
+                    set_flash_message('danger', 'Invalid request or status.');
+                    redirect('requests');
+                }
+
+                // If admin chooses 'fulfilled', redirect to the standalone issuance page.
+                if ($status === 'fulfilled') {
+                    redirect('issueblood.php', ['view' => 'list', 'request_id' => $request_id]);
+                } else {
+                    // For any other status change (e.g., 'closed'), update it directly.
+                    $stmt = $db->prepare("UPDATE requests SET status = ? WHERE id = ?");
+                    $stmt->execute([$status, $request_id]);
+                    set_flash_message('success', "Request status has been updated to '{$status}'.");
+                    redirect('requests');
+                }
                 break;
             case 'create_drive':
                 check_auth('admin');
@@ -2226,6 +2259,9 @@ switch ($page) {
                                 </a>
                                 <a href="finance.php" class="list-group-item list-group-item-action py-2 ripple">
                                     <?= render_icon('cash-coin') ?> <span>Financial Management</span>
+                                </a>
+                                <a href="issueblood.php" class="list-group-item list-group-item-action py-2 ripple">
+                                    <?= render_icon('box-arrow-up-right') ?> <span>Issue Blood</span>
                                 </a>
                                 <a href="?page=admin_backup" class="list-group-item list-group-item-action py-2 ripple <?= ($page == 'admin_backup') ? 'active' : '' ?>">
                                     <?= render_icon('database-down') ?> <span>Backup & Restore</span>
